@@ -4342,7 +4342,6 @@ app.listen(Number(port), '0.0.0.0', async () => {
     console.warn('⚠️ Table column alter warning:', alterErr.message);
   }
 
-<<<<<<< HEAD
     // Seeding default project ledger profiles, petty cash and company expenses safely
     try {
       const profilesCount = await pool.query('SELECT COUNT(*) as count FROM tenant_project_ledger_profiles');
@@ -4368,33 +4367,21 @@ app.listen(Number(port), '0.0.0.0', async () => {
                     (1, $1, 'Ramesh (Supervisor)', '2026-08-06', 'General Utilities', 4500, 'tea_snacks.pdf')`,
             [pId]
           );
+
+          await pool.query(
+            `INSERT INTO tenant_project_petty_cash (tenant_id, project_id, person_name, given, used, left_amount)
+             VALUES (1, $1, 'Suresh (Site Incharge)', 15000, 15000, 0) ON CONFLICT DO NOTHING`,
+            [pId]
+          );
+          await pool.query(
+            `INSERT INTO tenant_project_petty_cash_expenses (tenant_id, project_id, person_name, date, category, amount, bill)
+             VALUES (1, $1, 'Suresh (Site Incharge)', '2026-08-04', 'Transport & Fuel', 15000, 'fuel_mixer.pdf')`,
+            [pId]
+          );
         }
       }
-    // Create tenant_projects & tenant_worksites tables if not exist
-    try {
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS tenant_projects (
-          id SERIAL PRIMARY KEY,
-          project_id VARCHAR(50) NOT NULL UNIQUE,
-          tenant_id INTEGER REFERENCES tenants(id) ON DELETE CASCADE,
-          name VARCHAR(255) NOT NULL,
-          location VARCHAR(255) NOT NULL,
-          location_block VARCHAR(255),
-          customer VARCHAR(255),
-          commodity VARCHAR(255),
-          contract_quantity VARCHAR(100),
-          contract_quantity_unit VARCHAR(100),
-          contract_start_date VARCHAR(50),
-          contract_end_date VARCHAR(50),
-          other_data TEXT,
-          status VARCHAR(50) DEFAULT 'Active',
-          is_pinned BOOLEAN DEFAULT false,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-      `);
-      await pool.query('ALTER TABLE tenant_projects ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN DEFAULT false;').catch(() => {});
-    } catch (tpErr: any) {
-      console.warn('tenant_projects init notice:', tpErr.message);
+    } catch (pErr: any) {
+      console.log('Project ledger seeding notice:', pErr.message);
     }
 
     // Safely seed default ledgers if a tenant already exists
@@ -4431,94 +4418,32 @@ app.listen(Number(port), '0.0.0.0', async () => {
     } catch (seedErr: any) {
       console.log('Ledger seeding notice:', seedErr.message);
     }
-=======
-  // Seeding default project ledger profiles, petty cash and company expenses
-  const profilesCount = await pool.query('SELECT COUNT(*) as count FROM tenant_project_ledger_profiles');
-  if (parseInt(profilesCount.rows[0].count, 10) === 0) {
-    const proj = await pool.query('SELECT project_id FROM tenant_projects LIMIT 1');
-    if (proj.rows.length > 0) {
-      const pId = proj.rows[0].project_id;
 
-      await pool.query(
-        `INSERT INTO tenant_project_ledger_profiles (tenant_id, project_id, total_cost, notes)
-           VALUES (1, $1, 5000000, 'Main project budget and costing overview') ON CONFLICT DO NOTHING`,
-        [pId]
-      );
-
-      await pool.query(
-        `INSERT INTO tenant_project_petty_cash (tenant_id, project_id, person_name, given, used, left_amount)
-           VALUES (1, $1, 'Ramesh (Supervisor)', 20000, 14500, 5500) ON CONFLICT DO NOTHING`,
-        [pId]
-      );
-      await pool.query(
-        `INSERT INTO tenant_project_petty_cash_expenses (tenant_id, project_id, person_name, date, category, amount, bill)
-           VALUES (1, $1, 'Ramesh (Supervisor)', '2026-08-05', 'Material Expense', 10000, 'cement_delivery.pdf'),
-                  (1, $1, 'Ramesh (Supervisor)', '2026-08-06', 'General Utilities', 4500, 'tea_snacks.pdf')`,
-        [pId]
-      );
-
-      await pool.query(
-        `INSERT INTO tenant_project_petty_cash (tenant_id, project_id, person_name, given, used, left_amount)
-           VALUES (1, $1, 'Suresh (Site Incharge)', 15000, 15000, 0) ON CONFLICT DO NOTHING`,
-        [pId]
-      );
-      await pool.query(
-        `INSERT INTO tenant_project_petty_cash_expenses (tenant_id, project_id, person_name, date, category, amount, bill)
-           VALUES (1, $1, 'Suresh (Site Incharge)', '2026-08-04', 'Transport & Fuel', 15000, 'fuel_mixer.pdf')`,
-        [pId]
-      );
+    // Create tenant_projects table if not exists
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS tenant_projects (
+          id SERIAL PRIMARY KEY,
+          project_id VARCHAR(50) NOT NULL UNIQUE,
+          tenant_id INTEGER REFERENCES tenants(id) ON DELETE CASCADE,
+          name VARCHAR(255) NOT NULL,
+          location VARCHAR(255) NOT NULL,
+          location_block VARCHAR(255),
+          customer VARCHAR(255),
+          commodity VARCHAR(255),
+          contract_quantity VARCHAR(100),
+          contract_quantity_unit VARCHAR(100),
+          contract_start_date VARCHAR(50),
+          contract_end_date VARCHAR(50),
+          other_data TEXT,
+          status VARCHAR(50) DEFAULT 'Active',
+          is_pinned BOOLEAN DEFAULT false,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+    } catch (tpErr: any) {
+      console.warn('tenant_projects init notice:', tpErr.message);
     }
-  }
-
-  const payrollCount = await pool.query('SELECT COUNT(*) as count FROM tenant_payroll_ledgers');
-  if (parseInt(payrollCount.rows[0].count, 10) === 0) {
-    await pool.query(`
-        INSERT INTO tenant_payroll_ledgers (tenant_id, date, employee, amount, status)
-        VALUES (1, '2026-08-01', 'Ramesh', 35000, 'Paid'),
-               (1, '2026-08-01', 'Suresh', 28000, 'Paid')
-      `);
-  }
-
-  const compPcCount = await pool.query('SELECT COUNT(*) as count FROM tenant_company_petty_cash');
-  if (parseInt(compPcCount.rows[0].count, 10) === 0) {
-    await pool.query(`
-        INSERT INTO tenant_company_petty_cash (tenant_id, date, category, type, amount, balance)
-        VALUES (1, '2026-08-01', 'Float Top-up', 'topup', 10000, 10000),
-               (1, '2026-08-05', 'Office Supplies', 'expense', 1200, 8800)
-      `);
-  }
-
-  const loansCount = await pool.query('SELECT COUNT(*) as count FROM tenant_loans_ledger');
-  if (parseInt(loansCount.rows[0].count, 10) === 0) {
-    await pool.query(`
-        INSERT INTO tenant_loans_ledger (tenant_id, lender, principal, outstanding, emi_amount, start_date)
-        VALUES (1, 'ABC Finance Co.', 500000, 320000, 25000, '2026-04-01')
-      `);
-  }
-
-  // // Initialize tenant_projects table automatically
-  try {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS tenant_projects (
-        id SERIAL PRIMARY KEY,
-        project_id VARCHAR(50) NOT NULL UNIQUE,
-        tenant_id INTEGER REFERENCES tenants(id) ON DELETE CASCADE,
-        name VARCHAR(255) NOT NULL,
-        location VARCHAR(255) NOT NULL,
-        location_block VARCHAR(255),
-        customer VARCHAR(255),
-        commodity VARCHAR(255),
-        contract_quantity VARCHAR(100),
-        contract_quantity_unit VARCHAR(100),
-        contract_start_date VARCHAR(50),
-        contract_end_date VARCHAR(50),
-        other_data TEXT,
-        status VARCHAR(50) DEFAULT 'Active',
-        is_pinned BOOLEAN DEFAULT false,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
->>>>>>> fded647 (Update code changes)
 
     // Add is_pinned to existing tables if missing
     await pool.query('ALTER TABLE tenant_projects ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN DEFAULT false;');
@@ -4625,82 +4550,85 @@ app.listen(Number(port), '0.0.0.0', async () => {
     `);
     console.log('✅ Form Fields Config table created/verified');
 
-    const configCountRes = await pool.query('SELECT COUNT(*) as count FROM form_fields_config');
-    // Ledger & accounting database tables ready for production use
-
-
-    // 5. Seed default vendor and client to link notes/receipts
-    const newVendor = await pool.query(`
-      INSERT INTO tenant_vendors (tenant_id, name, code, vendor_type, status)
-      VALUES (1, 'Ultratech Cement Ltd.', 'VND-001', 'Material Supplier', 'Active')
-      RETURNING id
-    `);
-    const vendorId = newVendor.rows[0].id;
-
-    const newClient = await pool.query(`
-      INSERT INTO tenant_clients (tenant_id, name, code, status)
-      VALUES (1, 'Delhi Metro Rail Corporation', 'CLI-001', 'Active')
-      RETURNING id
-    `);
-    const clientId = newClient.rows[0].id;
-
-    // 6. Debit & Credit Notes Seeding
-    await pool.query(`
-      INSERT INTO tenant_vendor_ledger_entries (tenant_id, vendor_id, date, type, amount, project_id, voucher_no, note, status)
-      VALUES 
-        (1, $1, '2026-08-05', 'Debit Note', 15000, 'PRJ-001', 'DN-2026-001', 'Damaged cement bags return adjustment', 'Posted'),
-        (1, $1, '2026-08-06', 'Credit Note', 25000, 'PRJ-001', 'CN-2026-001', 'Discount allowance for Tata Steel bulk reinforcement purchase', 'Posted'),
-        (1, $1, '2026-08-11', 'Debit Note', 8000, 'PRJ-002', 'DN-2026-002', 'Sub-standard sand quality reduction deduction', 'Posted'),
-        (1, $1, '2026-08-14', 'Credit Note', 12000, 'PRJ-003', 'CN-2026-002', 'Excavation machine hire breakdown discount allowance', 'Posted')
-    `, [vendorId]);
-    console.log('✅ Mock debit and credit notes successfully seeded');
-
-    // 7. Client Receipts Seeding (Project Inflow / Revenue)
-    await pool.query(`
-      INSERT INTO tenant_client_ledger_entries (tenant_id, client_id, date, type, amount, project_id, voucher_no, note, status)
-      VALUES 
-        (1, $1, '2026-08-01', 'Receipt', 1200000, 'PRJ-001', 'REC-2026-001', 'DMRC Milestone #1 completion payment receipt', 'Posted'),
-        (1, $1, '2026-08-02', 'Receipt', 2500000, 'PRJ-002', 'REC-2026-002', 'NHAI Stage-1 mobilization advance receipt', 'Posted'),
-        (1, $1, '2026-08-10', 'Receipt', 950000, 'PRJ-003', 'REC-2026-003', 'Eldeco piling foundation stage client bill check clearing', 'Posted')
-    `, [clientId]);
-    console.log('✅ Mock client invoices/receipts successfully seeded');
-
-    const usersRes = await pool.query('SELECT id, name FROM tenant_users WHERE tenant_id = 1 LIMIT 3');
-    if (usersRes.rows.length > 0) {
-      // Noida Metro site (Supervisor 1 - Ramesh)
-      const sup1 = usersRes.rows[0].id;
-      const newFloat1 = await pool.query(`
-        INSERT INTO tenant_petty_cash_floats (tenant_id, custodian_id, site_id, opening_amount, current_balance)
-        VALUES (1, $1, 'WKS-001', 30000, 18500)
-        RETURNING id
-      `, [sup1]);
-      const floatId1 = newFloat1.rows[0].id;
-
-      await pool.query(`
-        INSERT INTO tenant_petty_cash_entries (float_id, date, type, category, project_tag, amount, voucher_no, note, status)
-        VALUES 
-          ($1, '2026-08-10', 'Expense', 'Material Purchase', 'PRJ-001', 6500, 'PC-VCH-101', 'Minor plumbing items purchase', 'Posted'),
-          ($1, '2026-08-12', 'Expense', 'Site Utilities', 'PRJ-001', 5000, 'PC-VCH-102', 'Weekly site water tanker charges', 'Posted')
-      `, [floatId1]);
-
-      if (usersRes.rows.length > 1) {
-        // Indirapuram Flyover site (Supervisor 2 - Suresh)
-        const sup2 = usersRes.rows[1].id;
-        const newFloat2 = await pool.query(`
-          INSERT INTO tenant_petty_cash_floats (tenant_id, custodian_id, site_id, opening_amount, current_balance)
-          VALUES (1, $1, 'WKS-002', 50000, 32000)
+    try {
+      const vendorCheck = await pool.query('SELECT COUNT(*) as count FROM tenant_vendors');
+      if (parseInt(vendorCheck.rows[0]?.count || '0', 10) === 0) {
+        // 5. Seed default vendor and client to link notes/receipts
+        const newVendor = await pool.query(`
+          INSERT INTO tenant_vendors (tenant_id, name, code, vendor_type, status)
+          VALUES (1, 'Ultratech Cement Ltd.', 'VND-001', 'Material Supplier', 'Active')
           RETURNING id
-        `, [sup2]);
-        const floatId2 = newFloat2.rows[0].id;
+        `);
+        const vendorId = newVendor.rows[0].id;
 
+        const newClient = await pool.query(`
+          INSERT INTO tenant_clients (tenant_id, name, code, status)
+          VALUES (1, 'Delhi Metro Rail Corporation', 'CLI-001', 'Active')
+          RETURNING id
+        `);
+        const clientId = newClient.rows[0].id;
+
+        // 6. Debit & Credit Notes Seeding
         await pool.query(`
-          INSERT INTO tenant_petty_cash_entries (float_id, date, type, category, project_tag, amount, voucher_no, note, status)
+          INSERT INTO tenant_vendor_ledger_entries (tenant_id, vendor_id, date, type, amount, project_id, voucher_no, note, status)
           VALUES 
-            ($1, '2026-08-08', 'Expense', 'Fuel & Transport', 'PRJ-002', 12000, 'PC-VCH-201', 'Site supervisor diesel topup for transport mixer', 'Posted'),
-            ($1, '2026-08-10', 'Expense', 'Safety Gear', 'PRJ-002', 6000, 'PC-VCH-202', 'Emergency purchase of 20 high-vis vests and safety helmets', 'Posted')
-        `, [floatId2]);
+            (1, $1, '2026-08-05', 'Debit Note', 15000, 'PRJ-001', 'DN-2026-001', 'Damaged cement bags return adjustment', 'Posted'),
+            (1, $1, '2026-08-06', 'Credit Note', 25000, 'PRJ-001', 'CN-2026-001', 'Discount allowance for Tata Steel bulk reinforcement purchase', 'Posted'),
+            (1, $1, '2026-08-11', 'Debit Note', 8000, 'PRJ-002', 'DN-2026-002', 'Sub-standard sand quality reduction deduction', 'Posted'),
+            (1, $1, '2026-08-14', 'Credit Note', 12000, 'PRJ-003', 'CN-2026-002', 'Excavation machine hire breakdown discount allowance', 'Posted')
+        `, [vendorId]);
+        console.log('✅ Mock debit and credit notes successfully seeded');
+
+        // 7. Client Receipts Seeding (Project Inflow / Revenue)
+        await pool.query(`
+          INSERT INTO tenant_client_ledger_entries (tenant_id, client_id, date, type, amount, project_id, voucher_no, note, status)
+          VALUES 
+            (1, $1, '2026-08-01', 'Receipt', 1200000, 'PRJ-001', 'REC-2026-001', 'DMRC Milestone #1 completion payment receipt', 'Posted'),
+            (1, $1, '2026-08-02', 'Receipt', 2500000, 'PRJ-002', 'REC-2026-002', 'NHAI Stage-1 mobilization advance receipt', 'Posted'),
+            (1, $1, '2026-08-10', 'Receipt', 950000, 'PRJ-003', 'REC-2026-003', 'Eldeco piling foundation stage client bill check clearing', 'Posted')
+        `, [clientId]);
+        console.log('✅ Mock client invoices/receipts successfully seeded');
+
+        const usersRes = await pool.query('SELECT id, name FROM tenant_users WHERE tenant_id = 1 LIMIT 3');
+        if (usersRes.rows.length > 0) {
+          // Noida Metro site (Supervisor 1 - Ramesh)
+          const sup1 = usersRes.rows[0].id;
+          const newFloat1 = await pool.query(`
+            INSERT INTO tenant_petty_cash_floats (tenant_id, custodian_id, site_id, opening_amount, current_balance)
+            VALUES (1, $1, 'WKS-001', 30000, 18500)
+            RETURNING id
+          `, [sup1]);
+          const floatId1 = newFloat1.rows[0].id;
+
+          await pool.query(`
+            INSERT INTO tenant_petty_cash_entries (float_id, date, type, category, project_tag, amount, voucher_no, note, status)
+            VALUES 
+              ($1, '2026-08-10', 'Expense', 'Material Purchase', 'PRJ-001', 6500, 'PC-VCH-101', 'Minor plumbing items purchase', 'Posted'),
+              ($1, '2026-08-12', 'Expense', 'Site Utilities', 'PRJ-001', 5000, 'PC-VCH-102', 'Weekly site water tanker charges', 'Posted')
+          `, [floatId1]);
+
+          if (usersRes.rows.length > 1) {
+            // Indirapuram Flyover site (Supervisor 2 - Suresh)
+            const sup2 = usersRes.rows[1].id;
+            const newFloat2 = await pool.query(`
+              INSERT INTO tenant_petty_cash_floats (tenant_id, custodian_id, site_id, opening_amount, current_balance)
+              VALUES (1, $1, 'WKS-002', 50000, 32000)
+              RETURNING id
+            `, [sup2]);
+            const floatId2 = newFloat2.rows[0].id;
+
+            await pool.query(`
+              INSERT INTO tenant_petty_cash_entries (float_id, date, type, category, project_tag, amount, voucher_no, note, status)
+              VALUES 
+                ($1, '2026-08-08', 'Expense', 'Fuel & Transport', 'PRJ-002', 12000, 'PC-VCH-201', 'Site supervisor diesel topup for transport mixer', 'Posted'),
+                ($1, '2026-08-10', 'Expense', 'Safety Gear', 'PRJ-002', 6000, 'PC-VCH-202', 'Emergency purchase of 20 high-vis vests and safety helmets', 'Posted')
+            `, [floatId2]);
+          }
+          console.log('✅ Supervisor petty cash floats and expenses successfully seeded');
+        }
       }
-      console.log('✅ Supervisor petty cash floats and expenses successfully seeded');
+    } catch (seedErr: any) {
+      console.log('Notice during initial seeding:', seedErr.message);
     }
     console.log(`
 ====================================================================
@@ -4708,7 +4636,4 @@ app.listen(Number(port), '0.0.0.0', async () => {
  🟢 SERVER READY TO PROCESS API REQUESTS
 ====================================================================
 `);
-  } catch (dbErr) {
-    console.error('❌ Failed to auto-initialize DB components:', dbErr);
-  }
 });
