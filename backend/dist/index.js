@@ -2186,6 +2186,315 @@ app.get('/api/tenant/projects/:firebaseUid', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+// ─── Ensure tenant_project_transactions table ────────────────────────────────
+pool.query(`
+  CREATE TABLE IF NOT EXISTS tenant_project_transactions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id INTEGER REFERENCES tenants(id) ON DELETE CASCADE,
+    project_id VARCHAR(100) NOT NULL,
+    date DATE NOT NULL DEFAULT CURRENT_DATE,
+    type VARCHAR(100) NOT NULL,
+    category VARCHAR(100) DEFAULT 'General',
+    amount NUMERIC(15,2) NOT NULL DEFAULT 0.00,
+    party_name VARCHAR(255) DEFAULT '',
+    entry_flow VARCHAR(20) NOT NULL DEFAULT 'debit',
+    voucher_no VARCHAR(100) DEFAULT '',
+    note TEXT DEFAULT '',
+    status VARCHAR(50) DEFAULT 'Posted',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_proj_tx_pid ON tenant_project_transactions(project_id);
+`).then(() => console.log('Checked/Created tenant_project_transactions table'))
+    .catch((e) => console.error('Error creating tenant_project_transactions:', e.message));
+// GET Single Project Details (Comprehensive A-to-Z Project Dossier, Financials, Work Order, Team)
+app.get(['/api/tenant/project/:id', '/api/tenant/projects/detail/:id'], async (req, res) => {
+    const { id } = req.params;
+    try {
+        const projRes = await pool.query(`SELECT id, tenant_id as "tenantId", project_id as "id", project_id as "projectId", name, location, location_block as "locationBlock", 
+              customer, commodity, contract_quantity as "contractQuantity", 
+              contract_quantity_unit as "contractQuantityUnit", 
+              contract_start_date as "contractStartDate", 
+              contract_end_date as "contractEndDate", 
+              other_data as "otherData", status, is_pinned as "is_pinned",
+              custom_fields as "customFields", created_at as "createdAt"
+       FROM tenant_projects 
+       WHERE project_id = $1 OR id::text = $1
+       LIMIT 1`, [id]);
+        if (projRes.rows.length === 0) {
+            return res.status(404).json({ error: 'Project not found' });
+        }
+        const proj = projRes.rows[0];
+        const pId = proj.projectId;
+        const tId = proj.tenantId;
+        // Parse otherData
+        let parsedOtherData = {};
+        try {
+            if (typeof proj.otherData === 'string') {
+                parsedOtherData = JSON.parse(proj.otherData);
+            }
+            else if (proj.otherData && typeof proj.otherData === 'object') {
+                parsedOtherData = proj.otherData;
+            }
+        }
+        catch (e) {
+            parsedOtherData = {};
+        }
+        // 1. Fetch Linked Work Order
+        let workOrder = null;
+        const originWO = parsedOtherData.originWorkOrder;
+        const originWOId = parsedOtherData.originWorkOrderId;
+        const woRes = await pool.query(`SELECT id, order_number as "orderNumber", title, description, notes, 
+              project_id as "projectId", worksite_name as "worksiteName", 
+              assigned_staff_name as "assignedStaffName", division_name as "divisionName",
+              priority, status, start_date as "startDate", due_date as "dueDate", 
+              end_date as "endDate", estimated_cost as "estimatedCost", 
+              actual_cost as "actualCost", client_name as "clientName", 
+              client_code as "clientCode", project_location_address as "projectLocationAddress",
+              commodity, contract_quantity as "contractQuantity", 
+              contract_quantity_unit as "contractQuantityUnit", 
+              loading_location as "loadingLocation",
+              unloading_location as "unloadingLocation",
+              transport_modes as "transportModes",
+              is_loss_applicable as "isLossApplicable",
+              allowed_loss_percent as "allowedLossPercent",
+              rate_type as "rateType",
+              rate_per_unit as "ratePerUnit",
+              payment_terms as "paymentTerms",
+              created_at as "createdAt"
+       FROM tenant_work_orders 
+       WHERE project_id = $1 
+          OR ($2::text != '' AND order_number = $2)
+          OR ($3::text IS NOT NULL AND id::text = $3::text)
+       ORDER BY id DESC
+       LIMIT 1`, [pId, originWO || '', originWOId || null]);
+        if (woRes.rows.length > 0) {
+            workOrder = woRes.rows[0];
+        }
+        // 2. Fetch All Unified Transactions
+        let transactions = [];
+        try {
+            const txRes = await pool.query(`
+        SELECT id::text, date::text, type, category, amount::numeric, party_name as "partyName", 
+               entry_flow as "entryFlow", voucher_no as "voucherNo", note, status, 
+               'Project Direct' as source, created_at as "createdAt"
+        FROM tenant_project_transactions
+        WHERE project_id = $1
+        
+        UNION ALL
+        
+        SELECT l.id::text, l.date::text, l.type, 'Client Billing' as category, l.amount::numeric, 
+               COALESCE(c.name, 'Client') as "partyName", 'credit' as "entryFlow",
+               l.voucher_no as "voucherNo", l.note, l.status, 'Client Ledger' as source,
+               l.created_at as "createdAt"
+        FROM tenant_client_ledger_entries l
+        LEFT JOIN tenant_clients c ON c.id = l.client_id
+        WHERE l.project_id = $1 OR l.project_tag = $1
+        
+        UNION ALL
+        
+        SELECT l.id::text, l.date::text, l.type, 'Vendor Bill' as category, l.amount::numeric, 
+               COALESCE(v.name, 'Vendor') as "partyName", 'debit' as "entryFlow",
+               l.voucher_no as "voucherNo", l.note, l.status, 'Vendor Ledger' as source,
+               l.created_at as "createdAt"
+        FROM tenant_vendor_ledger_entries l
+        LEFT JOIN tenant_vendors v ON v.id = l.vendor_id
+        WHERE l.project_id = $1 OR l.project_tag = $1
+
+        UNION ALL
+
+        SELECT id::text, date::text, type, COALESCE(category, 'Petty Cash') as category, amount::numeric, 
+               COALESCE(custodian_id, 'Site Custodian') as "partyName", 'debit' as "entryFlow",
+               voucher_no as "voucherNo", note, status, 'Petty Cash' as source,
+               created_at as "createdAt"
+        FROM tenant_petty_cash_entries
+        WHERE project_tag = $1
+
+        UNION ALL
+
+        SELECT id::text, date::text, 'Expense' as type, category, amount::numeric, 
+               person_name as "partyName", 'debit' as "entryFlow",
+               '' as "voucherNo", bill as note, 'Approved' as status, 'Project Petty Cash' as source,
+               created_at as "createdAt"
+        FROM tenant_project_petty_cash_expenses
+        WHERE project_id = $1
+
+        ORDER BY "createdAt" DESC, date DESC
+      `, [pId]);
+            transactions = txRes.rows;
+        }
+        catch (txErr) {
+            console.warn('Error fetching unified transactions:', txErr.message);
+        }
+        // 3. Compute Financial Summary & P&L
+        const rawBudget = workOrder?.estimatedCost || parsedOtherData.estimatedCost || (proj.customFields && proj.customFields['Estimated Budget']) || 0;
+        const estimatedBudget = parseFloat(String(rawBudget)) || 0;
+        let totalRevenue = 0;
+        let totalExpenses = 0;
+        const categoryTotals = {};
+        for (const tx of transactions) {
+            const amt = parseFloat(String(tx.amount)) || 0;
+            if (tx.entryFlow === 'credit') {
+                totalRevenue += amt;
+            }
+            else {
+                totalExpenses += amt;
+                const cat = tx.category || 'General';
+                categoryTotals[cat] = (categoryTotals[cat] || 0) + amt;
+            }
+        }
+        // Calculate Net Profit / Loss
+        // If client revenue has been received/invoiced, P&L is Revenue - Expenses.
+        // If revenue hasn't been billed yet, P&L is Budget - Expenses (remaining profit margin on budget).
+        const netProfitLoss = totalRevenue > 0 ? (totalRevenue - totalExpenses) : (estimatedBudget - totalExpenses);
+        const isNetProfit = netProfitLoss >= 0;
+        const baseline = totalRevenue > 0 ? totalRevenue : (estimatedBudget > 0 ? estimatedBudget : 0);
+        const profitMargin = baseline > 0 ? Math.round(((netProfitLoss / baseline) * 100) * 10) / 10 : 0;
+        const budgetUtilization = estimatedBudget > 0 ? Math.round((totalExpenses / estimatedBudget) * 100) : 0;
+        const expenseBreakdown = Object.entries(categoryTotals).map(([cat, amt]) => ({
+            category: cat,
+            amount: amt,
+            percentage: totalExpenses > 0 ? Math.round((amt / totalExpenses) * 100) : 0
+        }));
+        // 4. Assigned Team Roster
+        const projectHeadName = parsedOtherData.projectHeadName || (proj.customFields && proj.customFields['Assigned Project Lead']) || (workOrder && workOrder.assignedStaffName) || '';
+        const projectHeadRole = parsedOtherData.projectHeadRole || (proj.customFields && proj.customFields['Staff Role']) || 'Project Head';
+        const divisionName = parsedOtherData.division || (workOrder && workOrder.divisionName) || proj.locationBlock || '';
+        let customTeam = [];
+        if (proj.customFields && Array.isArray(proj.customFields.team)) {
+            customTeam = proj.customFields.team;
+        }
+        else if (parsedOtherData && Array.isArray(parsedOtherData.team)) {
+            customTeam = parsedOtherData.team;
+        }
+        // Also fetch available employees for this tenant
+        let companyUsers = [];
+        if (tId) {
+            try {
+                const uRes = await pool.query(`SELECT id, name, role, department, email, mobile, status, member_id as "memberId" 
+           FROM tenant_users 
+           WHERE tenant_id = $1 
+           ORDER BY name ASC`, [tId]);
+                companyUsers = uRes.rows;
+            }
+            catch (uErr) { }
+        }
+        res.json({
+            ...proj,
+            workOrder,
+            financialSummary: {
+                estimatedBudget,
+                totalRevenue,
+                totalExpenses,
+                netProfitLoss,
+                isNetProfit,
+                profitMargin,
+                budgetUtilization,
+                expenseBreakdown
+            },
+            transactions,
+            assignedHead: {
+                name: projectHeadName,
+                role: projectHeadRole,
+                division: divisionName
+            },
+            teamMembers: customTeam,
+            companyUsers
+        });
+    }
+    catch (err) {
+        console.error(`[GET /api/tenant/project/:id] Error:`, err);
+        res.status(500).json({ error: err.message });
+    }
+});
+// POST Record Project Transaction
+app.post('/api/tenant/project/:id/transactions', async (req, res) => {
+    const { id } = req.params;
+    const { date, type, category, amount, partyName, entryFlow, voucherNo, note, status } = req.body;
+    try {
+        const projRes = await pool.query('SELECT tenant_id, project_id FROM tenant_projects WHERE project_id = $1 OR id::text = $1', [id]);
+        if (projRes.rows.length === 0)
+            return res.status(404).json({ error: 'Project not found' });
+        const { tenant_id, project_id } = projRes.rows[0];
+        const insertRes = await pool.query(`
+      INSERT INTO tenant_project_transactions 
+        (tenant_id, project_id, date, type, category, amount, party_name, entry_flow, voucher_no, note, status)
+      VALUES 
+        ($1, $2, COALESCE($3, CURRENT_DATE), $4, $5, $6, $7, $8, $9, $10, COALESCE($11, 'Posted'))
+      RETURNING id::text, date::text, type, category, amount::numeric, party_name as "partyName", 
+                entry_flow as "entryFlow", voucher_no as "voucherNo", note, status, 
+                'Project Direct' as source, created_at as "createdAt"
+    `, [tenant_id, project_id, date || new Date().toISOString().split('T')[0], type || 'General Expense', category || 'General', amount || 0, partyName || '', entryFlow || 'debit', voucherNo || '', note || '', status || 'Posted']);
+        res.status(201).json(insertRes.rows[0]);
+    }
+    catch (err) {
+        console.error(`[POST /api/tenant/project/:id/transactions] Error:`, err);
+        res.status(500).json({ error: err.message });
+    }
+});
+// DELETE Project Transaction
+app.delete('/api/tenant/project/:id/transactions/:txId', async (req, res) => {
+    const { id, txId } = req.params;
+    try {
+        const deleteRes = await pool.query('DELETE FROM tenant_project_transactions WHERE id::text = $1 AND (project_id = $2 OR tenant_id IN (SELECT tenant_id FROM tenant_projects WHERE project_id = $2 OR id::text = $2)) RETURNING *', [txId, id]);
+        if (deleteRes.rows.length === 0)
+            return res.status(404).json({ error: 'Transaction not found or non-deletable' });
+        res.json({ message: 'Transaction removed successfully' });
+    }
+    catch (err) {
+        console.error(`[DELETE /api/tenant/project/:id/transactions/:txId] Error:`, err);
+        res.status(500).json({ error: err.message });
+    }
+});
+// POST Add Team Member to Project
+app.post('/api/tenant/project/:id/team', async (req, res) => {
+    const { id } = req.params;
+    const { memberId, name, role, email, mobile } = req.body;
+    try {
+        const projRes = await pool.query('SELECT id, project_id, custom_fields FROM tenant_projects WHERE project_id = $1 OR id::text = $1', [id]);
+        if (projRes.rows.length === 0)
+            return res.status(404).json({ error: 'Project not found' });
+        const p = projRes.rows[0];
+        const customFields = p.custom_fields || {};
+        const team = Array.isArray(customFields.team) ? customFields.team : [];
+        if (!team.some((m) => m.id === memberId)) {
+            team.push({
+                id: memberId || Date.now().toString(),
+                name,
+                role: role || 'Site Staff',
+                email: email || '',
+                mobile: mobile || '',
+                assignedAt: new Date().toISOString()
+            });
+            customFields.team = team;
+            await pool.query('UPDATE tenant_projects SET custom_fields = $1 WHERE id = $2', [JSON.stringify(customFields), p.id]);
+        }
+        res.json({ message: 'Team member assigned successfully', team });
+    }
+    catch (err) {
+        console.error(`[POST /api/tenant/project/:id/team] Error:`, err);
+        res.status(500).json({ error: err.message });
+    }
+});
+// DELETE Team Member from Project
+app.delete('/api/tenant/project/:id/team/:memberId', async (req, res) => {
+    const { id, memberId } = req.params;
+    try {
+        const projRes = await pool.query('SELECT id, project_id, custom_fields FROM tenant_projects WHERE project_id = $1 OR id::text = $1', [id]);
+        if (projRes.rows.length === 0)
+            return res.status(404).json({ error: 'Project not found' });
+        const p = projRes.rows[0];
+        const customFields = p.custom_fields || {};
+        let team = Array.isArray(customFields.team) ? customFields.team : [];
+        team = team.filter((m) => m.id !== memberId);
+        customFields.team = team;
+        await pool.query('UPDATE tenant_projects SET custom_fields = $1 WHERE id = $2', [JSON.stringify(customFields), p.id]);
+        res.json({ message: 'Team member removed successfully', team });
+    }
+    catch (err) {
+        console.error(`[DELETE /api/tenant/project/:id/team/:memberId] Error:`, err);
+        res.status(500).json({ error: err.message });
+    }
+});
 // POST Project
 app.post('/api/tenant/projects', async (req, res) => {
     const { adminUid, name, location, locationBlock, customer, commodity, contractQuantity, contractQuantityUnit, contractStartDate, contractEndDate, otherData, customFields } = req.body;
@@ -2220,7 +2529,23 @@ app.post('/api/tenant/projects', async (req, res) => {
         const actualName = name || `Project #${nextProjId}`;
         const insertRes = await pool.query(`INSERT INTO tenant_projects 
        (tenant_id, project_id, name, location, location_block, customer, commodity, contract_quantity, contract_quantity_unit, contract_start_date, contract_end_date, other_data, custom_fields) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *, project_id as "id", custom_fields as "customFields"`, [tenantId, nextProjId, actualName, location || 'N/A', locationBlock, customer, commodity, contractQuantity, contractQuantityUnit, contractStartDate, contractEndDate, otherData, customFields ? JSON.stringify(customFields) : null]);
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *, project_id as "id", project_id as "projectId", custom_fields as "customFields"`, [tenantId, nextProjId, actualName, location || 'N/A', locationBlock, customer, commodity, contractQuantity, contractQuantityUnit, contractStartDate, contractEndDate, otherData, customFields ? JSON.stringify(customFields) : null]);
+        // If otherData links to a work order, update tenant_work_orders to set project_id and project_name
+        try {
+            let parsedOD = {};
+            if (typeof otherData === 'string')
+                parsedOD = JSON.parse(otherData);
+            else if (typeof otherData === 'object' && otherData)
+                parsedOD = otherData;
+            if (parsedOD.originWorkOrder || parsedOD.originWorkOrderId) {
+                await pool.query(`UPDATE tenant_work_orders 
+           SET project_id = $1, project_name = $2, updated_at = CURRENT_TIMESTAMP
+           WHERE tenant_id = $3 AND (order_number = $4 OR id::text = $5)`, [nextProjId, actualName, tenantId, parsedOD.originWorkOrder || '', parsedOD.originWorkOrderId ? String(parsedOD.originWorkOrderId) : '']);
+            }
+        }
+        catch (woLinkErr) {
+            console.warn('Could not link work order to created project:', woLinkErr.message);
+        }
         res.status(201).json(insertRes.rows[0]);
     }
     catch (err) {
@@ -2243,11 +2568,47 @@ app.patch('/api/tenant/projects/:id/pin', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+// PATCH Update Project Details
+app.patch('/api/tenant/projects/:id', async (req, res) => {
+    const { id } = req.params;
+    const { name, location, locationBlock, customer, commodity, contractQuantity, contractQuantityUnit, contractStartDate, contractEndDate, status, otherData, customFields } = req.body;
+    try {
+        const updateRes = await pool.query(`UPDATE tenant_projects
+       SET name = COALESCE($1, name),
+           location = COALESCE($2, location),
+           location_block = COALESCE($3, location_block),
+           customer = COALESCE($4, customer),
+           commodity = COALESCE($5, commodity),
+           contract_quantity = COALESCE($6, contract_quantity),
+           contract_quantity_unit = COALESCE($7, contract_quantity_unit),
+           contract_start_date = COALESCE($8, contract_start_date),
+           contract_end_date = COALESCE($9, contract_end_date),
+           status = COALESCE($10, status),
+           other_data = COALESCE($11, other_data),
+           custom_fields = COALESCE($12, custom_fields)
+       WHERE project_id = $13 OR id::text = $13
+       RETURNING id, project_id as "id", project_id as "projectId", name, location, location_block as "locationBlock", 
+                 customer, commodity, contract_quantity as "contractQuantity", 
+                 contract_quantity_unit as "contractQuantityUnit", 
+                 contract_start_date as "contractStartDate", 
+                 contract_end_date as "contractEndDate", 
+                 other_data as "otherData", status, is_pinned as "is_pinned",
+                 custom_fields as "customFields"`, [name, location, locationBlock, customer, commodity, contractQuantity, contractQuantityUnit, contractStartDate, contractEndDate, status, otherData, customFields ? JSON.stringify(customFields) : null, id]);
+        if (updateRes.rows.length === 0) {
+            return res.status(404).json({ error: 'Project not found' });
+        }
+        res.json(updateRes.rows[0]);
+    }
+    catch (err) {
+        console.error(`[PATCH /api/tenant/projects/:id] Error:`, err);
+        res.status(500).json({ error: err.message });
+    }
+});
 // DELETE Project
 app.delete('/api/tenant/projects/:id', async (req, res) => {
     const { id } = req.params;
     try {
-        const deleteRes = await pool.query('DELETE FROM tenant_projects WHERE project_id = $1 RETURNING *', [id]);
+        const deleteRes = await pool.query('DELETE FROM tenant_projects WHERE project_id = $1 OR id::text = $1 RETURNING *', [id]);
         if (deleteRes.rows.length === 0)
             return res.status(404).json({ error: 'Project not found' });
         res.json({ message: 'Project deleted successfully' });
@@ -2319,6 +2680,29 @@ app.post('/api/tenant/worksites', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+// PUT Update Worksite
+app.put('/api/tenant/worksites/:id', async (req, res) => {
+    const { id } = req.params;
+    const { name, location, type, supervisor, contact, customFields } = req.body;
+    try {
+        const updateRes = await pool.query(`UPDATE tenant_worksites 
+       SET name = COALESCE($1, name),
+           location = COALESCE($2, location),
+           type = COALESCE($3, type),
+           supervisor = COALESCE($4, supervisor),
+           contact = COALESCE($5, contact),
+           custom_fields = COALESCE($6, custom_fields)
+       WHERE worksite_id = $7 OR id::text = $7
+       RETURNING *, worksite_id as "id", worksite_id as "worksiteId", custom_fields as "customFields"`, [name, location, type, supervisor, contact, customFields ? JSON.stringify(customFields) : null, id]);
+        if (updateRes.rows.length === 0)
+            return res.status(404).json({ error: 'Worksite not found' });
+        res.json(updateRes.rows[0]);
+    }
+    catch (err) {
+        console.error(`[PUT /api/tenant/worksites/:id] Error:`, err);
+        res.status(500).json({ error: err.message });
+    }
+});
 // DELETE Worksite
 app.delete('/api/tenant/worksites/:id', async (req, res) => {
     const { id } = req.params;
@@ -2345,6 +2729,528 @@ app.patch('/api/tenant/worksites/:id/geofence', async (req, res) => {
     }
     catch (err) {
         console.error(`[PATCH /api/tenant/worksites/geofence] Error:`, err);
+        res.status(500).json({ error: err.message });
+    }
+});
+// ─── WORK ORDERS ─────────────────────────────────────────────────────────
+// GET Work Orders
+app.get(['/api/tenant/work-orders/:firebaseUid', '/api/tenant/work-orders'], async (req, res) => {
+    const firebaseUid = req.params.firebaseUid || req.query.firebaseUid || req.query.uid;
+    try {
+        let tenantId = null;
+        if (firebaseUid) {
+            const tenantRes = await pool.query(`SELECT tenant_id FROM tenant_admins WHERE firebase_uid = $1
+         UNION
+         SELECT tenant_id FROM tenant_users WHERE firebase_uid = $1`, [firebaseUid]);
+            if (tenantRes.rows.length > 0)
+                tenantId = tenantRes.rows[0].tenant_id;
+        }
+        if (!tenantId) {
+            const firstTenant = await pool.query('SELECT tenant_id FROM tenant_admins ORDER BY id ASC LIMIT 1');
+            if (firstTenant.rows.length > 0)
+                tenantId = firstTenant.rows[0].tenant_id;
+        }
+        if (!tenantId) {
+            return res.json([]);
+        }
+        const woRes = await pool.query(`SELECT 
+         id,
+         order_number as "orderNumber",
+         title,
+         description,
+         project_id as "projectId",
+         project_name as "projectName",
+         client_id as "clientId",
+         client_name as "clientName",
+         client_code as "clientCode",
+         worksite_id as "worksiteId",
+         worksite_name as "worksiteName",
+         assigned_staff_id as "assignedStaffId",
+         assigned_staff_name as "assignedStaffName",
+         division_name as "divisionName",
+         department_name as "departmentName",
+         priority,
+         status,
+         start_date as "startDate",
+         due_date as "dueDate",
+         end_date as "endDate",
+         project_location_address as "projectLocationAddress",
+         commodity,
+         contract_quantity as "contractQuantity",
+         contract_quantity_unit as "contractQuantityUnit",
+         loading_location as "loadingLocation",
+         unloading_location as "unloadingLocation",
+         transport_modes as "transportModes",
+         is_loss_applicable as "isLossApplicable",
+         allowed_loss_percent as "allowedLossPercent",
+         rate_type as "rateType",
+         rate_per_unit as "ratePerUnit",
+         payment_terms as "paymentTerms",
+         estimated_cost as "estimatedCost",
+         actual_cost as "actualCost",
+         notes,
+         created_at as "createdAt",
+         updated_at as "updatedAt"
+       FROM tenant_work_orders 
+       WHERE tenant_id = $1 
+       ORDER BY created_at DESC`, [tenantId]);
+        res.json(woRes.rows);
+    }
+    catch (err) {
+        console.error(`[GET /api/tenant/work-orders] Error:`, err);
+        res.status(500).json({ error: err.message });
+    }
+});
+// POST Work Order
+app.post('/api/tenant/work-orders', async (req, res) => {
+    const { firebaseUid, title, description, projectId, projectName, clientId, clientName, clientCode, worksiteId, worksiteName, assignedStaffId, assignedStaffName, divisionName, departmentName, priority, status, startDate, dueDate, endDate, projectLocationAddress, commodity, contractQuantity, contractQuantityUnit, loadingLocation, unloadingLocation, transportModes, isLossApplicable, allowedLossPercent, rateType, ratePerUnit, paymentTerms, estimatedCost, actualCost, notes } = req.body;
+    try {
+        const tenantRes = await pool.query(`SELECT tenant_id FROM tenant_admins WHERE firebase_uid = $1
+       UNION
+       SELECT tenant_id FROM tenant_users WHERE firebase_uid = $1`, [firebaseUid]);
+        if (tenantRes.rows.length === 0)
+            return res.status(404).json({ error: 'Tenant identity not found' });
+        const tenantId = tenantRes.rows[0].tenant_id;
+        const tenantDetails = await pool.query(`SELECT company_name FROM tenants WHERE id = $1`, [tenantId]);
+        const companyName = tenantDetails.rows[0]?.company_name || 'TNT';
+        const companyPrefix = companyName.replace(/[^a-zA-Z]/g, '').toUpperCase().substring(0, 3).padEnd(3, 'X');
+        // Sequence Generator for order_number (e.g. USH-WO-0001)
+        let assigned = false;
+        let seqNum = 1;
+        let nextOrderNumber = '';
+        while (!assigned) {
+            const padded = String(seqNum).padStart(4, '0');
+            nextOrderNumber = `${companyPrefix}-WO-${padded}`;
+            const checkRes = await pool.query('SELECT id FROM tenant_work_orders WHERE order_number = $1', [nextOrderNumber]);
+            if (checkRes.rows.length === 0) {
+                assigned = true;
+            }
+            else {
+                seqNum++;
+            }
+        }
+        const effectiveEndDate = endDate || dueDate || null;
+        const finalTransportModes = Array.isArray(transportModes) ? transportModes.join(', ') : (transportModes || '');
+        const insertRes = await pool.query(`INSERT INTO tenant_work_orders 
+       (tenant_id, order_number, title, description, project_id, project_name, 
+        client_id, client_name, client_code,
+        worksite_id, worksite_name, assigned_staff_id, assigned_staff_name, 
+        division_name, department_name, priority, status, 
+        start_date, due_date, end_date, project_location_address, commodity, 
+        contract_quantity, contract_quantity_unit, 
+        loading_location, unloading_location, transport_modes,
+        is_loss_applicable, allowed_loss_percent, rate_type, rate_per_unit, payment_terms,
+        estimated_cost, actual_cost, notes) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35)
+       RETURNING 
+         id,
+         order_number as "orderNumber",
+         title,
+         description,
+         project_id as "projectId",
+         project_name as "projectName",
+         client_id as "clientId",
+         client_name as "clientName",
+         client_code as "clientCode",
+         worksite_id as "worksiteId",
+         worksite_name as "worksiteName",
+         assigned_staff_id as "assignedStaffId",
+         assigned_staff_name as "assignedStaffName",
+         division_name as "divisionName",
+         department_name as "departmentName",
+         priority,
+         status,
+         start_date as "startDate",
+         due_date as "dueDate",
+         end_date as "endDate",
+         project_location_address as "projectLocationAddress",
+         commodity,
+         contract_quantity as "contractQuantity",
+         contract_quantity_unit as "contractQuantityUnit",
+         loading_location as "loadingLocation",
+         unloading_location as "unloadingLocation",
+         transport_modes as "transportModes",
+         is_loss_applicable as "isLossApplicable",
+         allowed_loss_percent as "allowedLossPercent",
+         rate_type as "rateType",
+         rate_per_unit as "ratePerUnit",
+         payment_terms as "paymentTerms",
+         estimated_cost as "estimatedCost",
+         actual_cost as "actualCost",
+         notes,
+         created_at as "createdAt",
+         updated_at as "updatedAt"`, [
+            tenantId,
+            nextOrderNumber,
+            title || `Work Order ${nextOrderNumber}`,
+            description || '',
+            projectId || null,
+            projectName || null,
+            clientId || null,
+            clientName || null,
+            clientCode || null,
+            worksiteId || null,
+            worksiteName || null,
+            assignedStaffId || null,
+            assignedStaffName || null,
+            divisionName || null,
+            departmentName || null,
+            priority || 'Medium',
+            status || 'Pending',
+            startDate || null,
+            effectiveEndDate,
+            effectiveEndDate,
+            projectLocationAddress || null,
+            commodity || 'General Cargo',
+            contractQuantity || null,
+            contractQuantityUnit || 'Tons',
+            loadingLocation || null,
+            unloadingLocation || null,
+            finalTransportModes || null,
+            Boolean(isLossApplicable),
+            Number(allowedLossPercent) || 0,
+            rateType || 'Per Ton',
+            Number(ratePerUnit) || 0,
+            paymentTerms || 'Net 30 Days',
+            Number(estimatedCost) || 0,
+            Number(actualCost) || 0,
+            notes || ''
+        ]);
+        res.status(201).json(insertRes.rows[0]);
+    }
+    catch (err) {
+        console.error(`[POST /api/tenant/work-orders] Error:`, err);
+        res.status(500).json({ error: err.message });
+    }
+});
+// PUT Update Work Order
+app.put('/api/tenant/work-orders/:id', async (req, res) => {
+    const { id } = req.params;
+    const { title, description, projectId, projectName, clientId, clientName, clientCode, worksiteId, worksiteName, assignedStaffId, assignedStaffName, divisionName, departmentName, priority, status, startDate, dueDate, endDate, projectLocationAddress, commodity, contractQuantity, contractQuantityUnit, loadingLocation, unloadingLocation, transportModes, isLossApplicable, allowedLossPercent, rateType, ratePerUnit, paymentTerms, estimatedCost, actualCost, notes } = req.body;
+    const effectiveEndDate = endDate !== undefined ? endDate : dueDate;
+    const finalTransportModes = transportModes !== undefined ? (Array.isArray(transportModes) ? transportModes.join(', ') : transportModes) : undefined;
+    try {
+        const updateRes = await pool.query(`UPDATE tenant_work_orders 
+       SET title = COALESCE($1, title),
+           description = COALESCE($2, description),
+           project_id = COALESCE($3, project_id),
+           project_name = COALESCE($4, project_name),
+           client_id = COALESCE($5, client_id),
+           client_name = COALESCE($6, client_name),
+           client_code = COALESCE($7, client_code),
+           worksite_id = COALESCE($8, worksite_id),
+           worksite_name = COALESCE($9, worksite_name),
+           assigned_staff_id = COALESCE($10, assigned_staff_id),
+           assigned_staff_name = COALESCE($11, assigned_staff_name),
+           division_name = COALESCE($12, division_name),
+           department_name = COALESCE($13, department_name),
+           priority = COALESCE($14, priority),
+           status = COALESCE($15, status),
+           start_date = COALESCE($16, start_date),
+           due_date = COALESCE($17, due_date),
+           end_date = COALESCE($18, end_date),
+           project_location_address = COALESCE($19, project_location_address),
+           commodity = COALESCE($20, commodity),
+           contract_quantity = COALESCE($21, contract_quantity),
+           contract_quantity_unit = COALESCE($22, contract_quantity_unit),
+           loading_location = COALESCE($23, loading_location),
+           unloading_location = COALESCE($24, unloading_location),
+           transport_modes = COALESCE($25, transport_modes),
+           is_loss_applicable = COALESCE($26, is_loss_applicable),
+           allowed_loss_percent = COALESCE($27, allowed_loss_percent),
+           rate_type = COALESCE($28, rate_type),
+           rate_per_unit = COALESCE($29, rate_per_unit),
+           payment_terms = COALESCE($30, payment_terms),
+           estimated_cost = COALESCE($31, estimated_cost),
+           actual_cost = COALESCE($32, actual_cost),
+           notes = COALESCE($33, notes),
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id::text = $34 OR order_number = $34
+       RETURNING 
+         id,
+         order_number as "orderNumber",
+         title,
+         description,
+         project_id as "projectId",
+         project_name as "projectName",
+         client_id as "clientId",
+         client_name as "clientName",
+         client_code as "clientCode",
+         worksite_id as "worksiteId",
+         worksite_name as "worksiteName",
+         assigned_staff_id as "assignedStaffId",
+         assigned_staff_name as "assignedStaffName",
+         division_name as "divisionName",
+         department_name as "departmentName",
+         priority,
+         status,
+         start_date as "startDate",
+         due_date as "dueDate",
+         end_date as "endDate",
+         project_location_address as "projectLocationAddress",
+         commodity,
+         contract_quantity as "contractQuantity",
+         contract_quantity_unit as "contractQuantityUnit",
+         loading_location as "loadingLocation",
+         unloading_location as "unloadingLocation",
+         transport_modes as "transportModes",
+         is_loss_applicable as "isLossApplicable",
+         allowed_loss_percent as "allowedLossPercent",
+         rate_type as "rateType",
+         rate_per_unit as "ratePerUnit",
+         payment_terms as "paymentTerms",
+         estimated_cost as "estimatedCost",
+         actual_cost as "actualCost",
+         notes,
+         created_at as "createdAt",
+         updated_at as "updatedAt"`, [
+            title,
+            description,
+            projectId,
+            projectName,
+            clientId,
+            clientName,
+            clientCode,
+            worksiteId,
+            worksiteName,
+            assignedStaffId,
+            assignedStaffName,
+            divisionName,
+            departmentName,
+            priority,
+            status,
+            startDate,
+            effectiveEndDate,
+            effectiveEndDate,
+            projectLocationAddress,
+            commodity,
+            contractQuantity,
+            contractQuantityUnit,
+            loadingLocation,
+            unloadingLocation,
+            finalTransportModes,
+            isLossApplicable !== undefined ? Boolean(isLossApplicable) : null,
+            allowedLossPercent !== undefined ? Number(allowedLossPercent) : null,
+            rateType,
+            ratePerUnit !== undefined ? Number(ratePerUnit) : null,
+            paymentTerms,
+            estimatedCost !== undefined ? Number(estimatedCost) : null,
+            actualCost !== undefined ? Number(actualCost) : null,
+            notes,
+            id
+        ]);
+        if (updateRes.rows.length === 0)
+            return res.status(404).json({ error: 'Work order not found' });
+        res.json(updateRes.rows[0]);
+    }
+    catch (err) {
+        console.error(`[PUT /api/tenant/work-orders/:id] Error:`, err);
+        res.status(500).json({ error: err.message });
+    }
+});
+// PATCH Status
+app.patch('/api/tenant/work-orders/:id/status', async (req, res) => {
+    const { id } = req.params;
+    const { status } = req.body;
+    try {
+        const updateRes = await pool.query(`UPDATE tenant_work_orders 
+       SET status = $1, updated_at = CURRENT_TIMESTAMP 
+       WHERE id::text = $2 OR order_number = $2
+       RETURNING 
+         id,
+         order_number as "orderNumber",
+         title,
+         description,
+         project_id as "projectId",
+         project_name as "projectName",
+         worksite_id as "worksiteId",
+         worksite_name as "worksiteName",
+         assigned_staff_id as "assignedStaffId",
+         assigned_staff_name as "assignedStaffName",
+         division_name as "divisionName",
+         department_name as "departmentName",
+         priority,
+         status,
+         start_date as "startDate",
+         due_date as "dueDate",
+         end_date as "endDate",
+         project_location_address as "projectLocationAddress",
+         commodity,
+         contract_quantity as "contractQuantity",
+         contract_quantity_unit as "contractQuantityUnit",
+         estimated_cost as "estimatedCost",
+         actual_cost as "actualCost",
+         notes,
+         created_at as "createdAt",
+         updated_at as "updatedAt"`, [status, id]);
+        if (updateRes.rows.length === 0)
+            return res.status(404).json({ error: 'Work order not found' });
+        res.json(updateRes.rows[0]);
+    }
+    catch (err) {
+        console.error(`[PATCH /api/tenant/work-orders/status] Error:`, err);
+        res.status(500).json({ error: err.message });
+    }
+});
+// DELETE Work Order
+app.delete('/api/tenant/work-orders/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const deleteRes = await pool.query('DELETE FROM tenant_work_orders WHERE id::text = $1 OR order_number = $1 RETURNING *', [id]);
+        if (deleteRes.rows.length === 0)
+            return res.status(404).json({ error: 'Work order not found' });
+        res.json({ message: 'Work order deleted successfully' });
+    }
+    catch (err) {
+        console.error(`[DELETE /api/tenant/work-orders] Error:`, err);
+        res.status(500).json({ error: err.message });
+    }
+});
+// POST Convert Work Order to Project
+app.post('/api/tenant/work-orders/:id/convert-to-project', async (req, res) => {
+    const { id } = req.params;
+    const { firebaseUid, projectHeadName, projectHeadRole, divisionName } = req.body;
+    try {
+        const tenantRes = await pool.query(`SELECT tenant_id FROM tenant_admins WHERE firebase_uid = $1
+       UNION
+       SELECT tenant_id FROM tenant_users WHERE firebase_uid = $1`, [firebaseUid]);
+        if (tenantRes.rows.length === 0)
+            return res.status(404).json({ error: 'Tenant identity not found' });
+        const tenantId = tenantRes.rows[0].tenant_id;
+        // Fetch the work order
+        const woRes = await pool.query(`SELECT * FROM tenant_work_orders WHERE (id::text = $1 OR order_number = $1) AND tenant_id = $2`, [id, tenantId]);
+        if (woRes.rows.length === 0)
+            return res.status(404).json({ error: 'Work order not found' });
+        const wo = woRes.rows[0];
+        // Check if already converted
+        if (wo.project_id) {
+            return res.status(400).json({ error: `Already converted to project ${wo.project_id}` });
+        }
+        const effectiveDivision = divisionName || wo.division_name || '';
+        // Sequence Generator for project_id (e.g. ASD-PRJ-0001)
+        const tenantDetails = await pool.query(`SELECT company_name FROM tenants WHERE id = $1`, [tenantId]);
+        const companyName = tenantDetails.rows[0]?.company_name || 'TNT';
+        const companyPrefix = companyName.replace(/[^a-zA-Z]/g, '').toUpperCase().substring(0, 3).padEnd(3, 'X');
+        const projectName = wo.title || 'Project';
+        const projectPrefix = projectName.replace(/[^a-zA-Z]/g, '').toUpperCase().substring(0, 3).padEnd(3, 'X');
+        let assigned = false;
+        let seqNum = 1;
+        let nextProjId = '';
+        while (!assigned) {
+            const padded = String(seqNum).padStart(4, '0');
+            nextProjId = `${companyPrefix}-${projectPrefix}-${padded}`;
+            const checkId = await pool.query('SELECT id FROM tenant_projects WHERE tenant_id = $1 AND project_id = $2', [tenantId, nextProjId]);
+            if (checkId.rows.length === 0) {
+                assigned = true;
+            }
+            else {
+                seqNum++;
+            }
+        }
+        const customerInfo = wo.client_name
+            ? `${wo.client_name}${wo.client_code ? ` (${wo.client_code})` : ''}`
+            : (projectHeadName ? `Lead: ${projectHeadName}` : 'Work Order Conversion');
+        const customFieldsObj = projectHeadName
+            ? {
+                'Assigned Project Lead': projectHeadName,
+                'Staff Role': projectHeadRole || 'Project Head',
+                'Client Name / ID': wo.client_name ? `${wo.client_name}${wo.client_code ? ` (${wo.client_code})` : ''}` : 'N/A'
+            }
+            : null;
+        // Insert into tenant_projects with location, commodity, quantity, dates, and assigned project head
+        const insertProj = await pool.query(`INSERT INTO tenant_projects 
+       (tenant_id, project_id, name, location, location_block, customer, commodity, contract_quantity, contract_quantity_unit, contract_start_date, contract_end_date, other_data, custom_fields, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'Active')
+       RETURNING *, project_id as "id"`, [
+            tenantId,
+            nextProjId,
+            wo.title,
+            wo.project_location_address || wo.worksite_name || 'N/A',
+            effectiveDivision,
+            customerInfo,
+            wo.commodity || 'General Cargo',
+            wo.contract_quantity || null,
+            wo.contract_quantity_unit || 'Tons',
+            wo.start_date || new Date().toISOString().split('T')[0],
+            wo.end_date || wo.due_date || '',
+            JSON.stringify({
+                originWorkOrder: wo.order_number,
+                estimatedCost: wo.estimated_cost,
+                projectHeadName: projectHeadName || null,
+                projectHeadRole: projectHeadRole || null,
+                clientId: wo.client_id || null,
+                clientName: wo.client_name || null,
+                clientCode: wo.client_code || null,
+                division: effectiveDivision,
+                notes: wo.notes,
+                description: wo.description,
+                loadingLocation: wo.loading_location || null,
+                unloadingLocation: wo.unloading_location || null,
+                transportModes: wo.transport_modes || null,
+                isLossApplicable: wo.is_loss_applicable || false,
+                allowedLossPercent: wo.allowed_loss_percent || 0,
+                rateType: wo.rate_type || null,
+                ratePerUnit: wo.rate_per_unit || 0,
+                paymentTerms: wo.payment_terms || null
+            }),
+            customFieldsObj ? JSON.stringify(customFieldsObj) : null
+        ]);
+        const createdProj = insertProj.rows[0];
+        // Update the work order with project linkage, assigned staff, and division if newly set
+        const updateWo = await pool.query(`UPDATE tenant_work_orders
+       SET project_id = $1, 
+           project_name = $2, 
+           assigned_staff_name = COALESCE($3, assigned_staff_name), 
+           division_name = COALESCE(NULLIF($4, ''), division_name),
+           status = 'Created', 
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $5
+       RETURNING 
+         id,
+         order_number as "orderNumber",
+         title,
+         description,
+         project_id as "projectId",
+         project_name as "projectName",
+         client_id as "clientId",
+         client_name as "clientName",
+         client_code as "clientCode",
+         worksite_id as "worksiteId",
+         worksite_name as "worksiteName",
+         assigned_staff_id as "assignedStaffId",
+         assigned_staff_name as "assignedStaffName",
+         division_name as "divisionName",
+         department_name as "departmentName",
+         priority,
+         status,
+         start_date as "startDate",
+         due_date as "dueDate",
+         end_date as "endDate",
+         project_location_address as "projectLocationAddress",
+         commodity,
+         contract_quantity as "contractQuantity",
+         contract_quantity_unit as "contractQuantityUnit",
+         loading_location as "loadingLocation",
+         unloading_location as "unloadingLocation",
+         transport_modes as "transportModes",
+         is_loss_applicable as "isLossApplicable",
+         allowed_loss_percent as "allowedLossPercent",
+         rate_type as "rateType",
+         rate_per_unit as "ratePerUnit",
+         payment_terms as "paymentTerms",
+         estimated_cost as "estimatedCost",
+         actual_cost as "actualCost",
+         notes,
+         created_at as "createdAt",
+         updated_at as "updatedAt"`, [createdProj.project_id, createdProj.name, projectHeadName || null, effectiveDivision || null, wo.id]);
+        res.json({
+            message: `Work order successfully converted to project ${createdProj.project_id}`,
+            project: createdProj,
+            workOrder: updateWo.rows[0]
+        });
+    }
+    catch (err) {
+        console.error(`[POST /api/tenant/work-orders/:id/convert-to-project] Error:`, err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -2392,13 +3298,26 @@ app.get('/api/tenant/divisions/:userUid', async (req, res) => {
         if (!tenantId) {
             return res.status(404).json({ error: 'Tenant profile not found' });
         }
-        const divisionsRes = await pool.query(`SELECT d.id, d.name, d.state, d.city, d.pincodes, d.description, d.status, d.created_at,
-              COALESCE(COUNT(DISTINCT u.id), 0)::INTEGER AS member_count
-       FROM tenant_divisions d
-       LEFT JOIN tenant_users u ON (u.division_id = d.id OR d.id::text = ANY(u.division_ids))
-       WHERE d.tenant_id = $1
-       GROUP BY d.id
-       ORDER BY d.created_at DESC`, [tenantId]);
+        let divisionsRes;
+        try {
+            divisionsRes = await pool.query(`SELECT d.id, d.name, d.state, d.city, d.pincodes, d.description, d.status, d.created_at,
+                COALESCE(COUNT(DISTINCT u.id), 0)::INTEGER AS member_count
+         FROM tenant_divisions d
+         LEFT JOIN tenant_users u ON (u.division_id = d.id OR (u.division_ids IS NOT NULL AND d.id::text = ANY(u.division_ids)))
+         WHERE d.tenant_id = $1
+         GROUP BY d.id
+         ORDER BY d.created_at DESC`, [tenantId]);
+        }
+        catch (joinErr) {
+            // Safe fallback if division_ids array column does not exist yet
+            divisionsRes = await pool.query(`SELECT d.id, d.name, d.state, d.city, d.pincodes, d.description, d.status, d.created_at,
+                COALESCE(COUNT(DISTINCT u.id), 0)::INTEGER AS member_count
+         FROM tenant_divisions d
+         LEFT JOIN tenant_users u ON u.division_id = d.id
+         WHERE d.tenant_id = $1
+         GROUP BY d.id
+         ORDER BY d.created_at DESC`, [tenantId]);
+        }
         res.json(divisionsRes.rows);
     }
     catch (err) {
@@ -2410,7 +3329,13 @@ app.get('/api/tenant/divisions/:userUid', async (req, res) => {
 app.get('/api/tenant/divisions/:id/team', async (req, res) => {
     const { id } = req.params;
     try {
-        const teamRes = await pool.query('SELECT id, name, role, department, email, mobile, status, member_id FROM tenant_users WHERE division_id = $1 OR $1::text = ANY(division_ids) ORDER BY name ASC', [id]);
+        let teamRes;
+        try {
+            teamRes = await pool.query('SELECT id, name, role, department, email, mobile, status, member_id FROM tenant_users WHERE division_id = $1 OR (division_ids IS NOT NULL AND $1::text = ANY(division_ids)) ORDER BY name ASC', [id]);
+        }
+        catch {
+            teamRes = await pool.query('SELECT id, name, role, department, email, mobile, status, member_id FROM tenant_users WHERE division_id = $1 ORDER BY name ASC', [id]);
+        }
         res.json(teamRes.rows);
     }
     catch (err) {
@@ -2421,9 +3346,11 @@ app.get('/api/tenant/divisions/:id/team', async (req, res) => {
 // POST Division
 app.post('/api/tenant/divisions', async (req, res) => {
     const { userUid, name, state, city, pincodes, description, status } = req.body;
-    if (!userUid || !name || !state || !city) {
-        return res.status(400).json({ error: 'Missing required fields: userUid, name, state, city are required' });
+    if (!userUid || !name || !name.trim()) {
+        return res.status(400).json({ error: 'Missing required field: name is required' });
     }
+    const effectiveState = (state && state.trim()) ? state.trim() : 'General';
+    const effectiveCity = (city && city.trim()) ? city.trim() : 'General';
     try {
         const { authorized, tenantId } = await checkIsAdminOrHR(userUid);
         if (!tenantId) {
@@ -2439,7 +3366,7 @@ app.post('/api/tenant/divisions', async (req, res) => {
         }
         const insertRes = await pool.query(`INSERT INTO tenant_divisions (tenant_id, name, state, city, pincodes, description, status)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING *`, [tenantId, name.trim(), state.trim(), city.trim(), pincodes || '', description || '', status || 'Active']);
+       RETURNING *`, [tenantId, name.trim(), effectiveState, effectiveCity, pincodes || '', description || '', status || 'Active']);
         res.status(201).json(insertRes.rows[0]);
     }
     catch (err) {
@@ -2451,9 +3378,11 @@ app.post('/api/tenant/divisions', async (req, res) => {
 app.put('/api/tenant/divisions/:id', async (req, res) => {
     const { id } = req.params;
     const { userUid, name, state, city, pincodes, description, status } = req.body;
-    if (!userUid || !name || !state || !city) {
-        return res.status(400).json({ error: 'Missing required fields: userUid, name, state, city are required' });
+    if (!userUid || !name || !name.trim()) {
+        return res.status(400).json({ error: 'Missing required field: name is required' });
     }
+    const effectiveState = (state && state.trim()) ? state.trim() : 'General';
+    const effectiveCity = (city && city.trim()) ? city.trim() : 'General';
     try {
         const { authorized, tenantId } = await checkIsAdminOrHR(userUid);
         if (!tenantId) {
@@ -2470,7 +3399,7 @@ app.put('/api/tenant/divisions/:id', async (req, res) => {
         const updateRes = await pool.query(`UPDATE tenant_divisions
        SET name = $1, state = $2, city = $3, pincodes = $4, description = $5, status = $6
        WHERE id = $7 AND tenant_id = $8
-       RETURNING *`, [name.trim(), state.trim(), city.trim(), pincodes || '', description || '', status || 'Active', id, tenantId]);
+       RETURNING *`, [name.trim(), effectiveState, effectiveCity, pincodes || '', description || '', status || 'Active', id, tenantId]);
         if (updateRes.rows.length === 0) {
             return res.status(404).json({ error: 'Division not found' });
         }
@@ -4507,9 +5436,82 @@ app.listen(Number(port), '0.0.0.0', async () => {
       );
     `);
     console.log('✅ Auto-created/verified tenant_divisions table on server startup');
-    // Add division_id column to tenant_users table if missing
+    // Add division_id and division_ids columns to tenant_users table if missing
     await pool.query('ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS division_id UUID REFERENCES tenant_divisions(id) ON DELETE SET NULL;');
-    console.log('✅ Auto-created/verified division_id column in tenant_users table on server startup');
+    await pool.query('ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS division_ids TEXT[] DEFAULT \'{}\';');
+    console.log('✅ Auto-created/verified division_id & division_ids columns in tenant_users table on server startup');
+    // Auto-create tenant_work_orders table and columns
+    await pool.query(`
+    CREATE TABLE IF NOT EXISTS tenant_work_orders (
+      id SERIAL PRIMARY KEY,
+      tenant_id INTEGER REFERENCES tenants(id) ON DELETE CASCADE,
+      order_number VARCHAR(100) UNIQUE NOT NULL,
+      title VARCHAR(255) NOT NULL,
+      description TEXT,
+      project_id VARCHAR(100),
+      project_name VARCHAR(255),
+      client_id TEXT,
+      client_name TEXT,
+      client_code TEXT,
+      worksite_id VARCHAR(100),
+      worksite_name VARCHAR(255),
+      assigned_staff_id VARCHAR(100),
+      assigned_staff_name VARCHAR(255),
+      division_name VARCHAR(255),
+      department_name VARCHAR(255),
+      priority VARCHAR(50) DEFAULT 'Medium',
+      status VARCHAR(50) DEFAULT 'Pending',
+      start_date VARCHAR(50),
+      due_date VARCHAR(50),
+      end_date VARCHAR(50),
+      project_location_address TEXT,
+      commodity VARCHAR(100),
+      contract_quantity VARCHAR(100),
+      contract_quantity_unit VARCHAR(50),
+      estimated_cost NUMERIC(15,2) DEFAULT 0,
+      actual_cost NUMERIC(15,2) DEFAULT 0,
+      notes TEXT,
+      created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+    ALTER TABLE tenant_work_orders ADD COLUMN IF NOT EXISTS end_date VARCHAR(50);
+    ALTER TABLE tenant_work_orders ADD COLUMN IF NOT EXISTS project_location_address TEXT;
+    ALTER TABLE tenant_work_orders ADD COLUMN IF NOT EXISTS commodity VARCHAR(100);
+    ALTER TABLE tenant_work_orders ADD COLUMN IF NOT EXISTS contract_quantity VARCHAR(100);
+    ALTER TABLE tenant_work_orders ADD COLUMN IF NOT EXISTS contract_quantity_unit VARCHAR(50);
+    ALTER TABLE tenant_work_orders ADD COLUMN IF NOT EXISTS client_id TEXT;
+    ALTER TABLE tenant_work_orders ADD COLUMN IF NOT EXISTS client_name TEXT;
+    ALTER TABLE tenant_work_orders ADD COLUMN IF NOT EXISTS client_code TEXT;
+    ALTER TABLE tenant_work_orders ADD COLUMN IF NOT EXISTS loading_location TEXT;
+    ALTER TABLE tenant_work_orders ADD COLUMN IF NOT EXISTS unloading_location TEXT;
+    ALTER TABLE tenant_work_orders ADD COLUMN IF NOT EXISTS transport_modes TEXT;
+    ALTER TABLE tenant_work_orders ADD COLUMN IF NOT EXISTS is_loss_applicable BOOLEAN DEFAULT false;
+    ALTER TABLE tenant_work_orders ADD COLUMN IF NOT EXISTS allowed_loss_percent NUMERIC(5,2) DEFAULT 0.00;
+    ALTER TABLE tenant_work_orders ADD COLUMN IF NOT EXISTS rate_type VARCHAR(100) DEFAULT 'Per Ton';
+    ALTER TABLE tenant_work_orders ADD COLUMN IF NOT EXISTS rate_per_unit NUMERIC(15,2) DEFAULT 0.00;
+    ALTER TABLE tenant_work_orders ADD COLUMN IF NOT EXISTS payment_terms VARCHAR(255) DEFAULT 'Net 30 Days';
+  `);
+    console.log('✅ Auto-created/verified tenant_work_orders table and extended commercial/location columns on server startup');
+    // Auto-create tenant_project_transactions table
+    await pool.query(`
+    CREATE TABLE IF NOT EXISTS tenant_project_transactions (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id INTEGER REFERENCES tenants(id) ON DELETE CASCADE,
+      project_id VARCHAR(100) NOT NULL,
+      date DATE NOT NULL DEFAULT CURRENT_DATE,
+      type VARCHAR(100) NOT NULL,
+      category VARCHAR(100) DEFAULT 'General',
+      amount NUMERIC(15,2) NOT NULL DEFAULT 0.00,
+      party_name VARCHAR(255) DEFAULT '',
+      entry_flow VARCHAR(20) NOT NULL DEFAULT 'debit',
+      voucher_no VARCHAR(100) DEFAULT '',
+      note TEXT DEFAULT '',
+      status VARCHAR(50) DEFAULT 'Posted',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_project_tx_proj_id ON tenant_project_transactions (project_id);
+  `);
+    console.log('✅ Auto-created/verified tenant_project_transactions table on server startup');
     // Initialize tenant_departments table automatically
     await pool.query(`
     CREATE TABLE IF NOT EXISTS tenant_departments (
