@@ -16,7 +16,8 @@ ENV VITE_FIREBASE_PROJECT_ID=$VITE_FIREBASE_PROJECT_ID
 ENV VITE_API_URL=$VITE_API_URL
 
 COPY tsconfig*.json ./
-COPY tailwind.config.js postcss.config.js eslint.config.js vite.config.ts index.html ./
+COPY tailwind.config.js postcss.config.js eslint.config.js ./
+COPY index.html ./
 COPY public ./public/
 COPY src ./src/
 
