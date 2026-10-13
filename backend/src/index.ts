@@ -8334,8 +8334,6 @@ app.listen(Number(port), '0.0.0.0', async () => {
     ALTER TABLE tenant_heavy_equipment ADD COLUMN IF NOT EXISTS insurance_history JSONB DEFAULT '[]'::jsonb;
   `);
   console.log('✅ Auto-created/verified tenant_vehicles & tenant_heavy_equipment tables on server startup');
-
-
   try {
     const vendorCheck = await pool.query('SELECT COUNT(*) as count FROM tenant_vendors');
     if (parseInt(vendorCheck.rows[0]?.count || '0', 10) === 0) {

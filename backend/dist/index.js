@@ -1925,7 +1925,8 @@ app.get('/api/tenant/team', async (req, res) => {
              u.profile_photo, u.salary, u.mobile_verified,
              u.bank_name, u.bank_account_number, u.ifsc_code, u.account_holder_name,
              u.sub_role, u.employee_type, u.joining_date,
-             d.name AS division_name 
+             u.permissions, u.allowed_modules, u.landing_module,
+              d.name AS division_name 
       FROM tenant_users u
       LEFT JOIN tenant_divisions d ON d.id = u.division_id
     `;
@@ -1977,6 +1978,7 @@ app.get('/api/tenant/team/:firebaseUid', async (req, res) => {
               u.profile_photo, u.salary, u.mobile_verified,
               u.bank_name, u.bank_account_number, u.ifsc_code, u.account_holder_name,
               u.sub_role, u.employee_type, u.joining_date,
+              u.permissions, u.allowed_modules, u.landing_module,
               d.name AS division_name 
        FROM tenant_users u
        LEFT JOIN tenant_divisions d ON d.id = u.division_id
@@ -2008,6 +2010,7 @@ app.get('/api/tenant/team/tenant/:tenantId', async (req, res) => {
               u.profile_photo, u.salary, u.mobile_verified,
               u.bank_name, u.bank_account_number, u.ifsc_code, u.account_holder_name,
               u.sub_role, u.employee_type, u.joining_date,
+              u.permissions, u.allowed_modules, u.landing_module,
               d.name AS division_name 
        FROM tenant_users u
        LEFT JOIN tenant_divisions d ON d.id = u.division_id
@@ -2159,18 +2162,25 @@ app.delete('/api/tenant/team/:id', async (req, res) => {
 });
 // ─── PROJECTS ─────────────────────────────────────────────────────────────
 // GET Projects
-app.get('/api/tenant/projects/:firebaseUid', async (req, res) => {
-    const { firebaseUid } = req.params;
-    console.log(`[GET /api/tenant/projects] Fetching projects for firebaseUid: ${firebaseUid}`);
+app.get(['/api/tenant/projects/:firebaseUid', '/api/tenant/projects'], async (req, res) => {
+    const firebaseUid = req.params.firebaseUid || req.query.firebaseUid || req.query.uid;
     try {
-        const tenantRes = await pool.query(`SELECT tenant_id FROM tenant_admins WHERE firebase_uid = $1
-       UNION
-       SELECT tenant_id FROM tenant_users WHERE firebase_uid = $1`, [firebaseUid]);
-        if (tenantRes.rows.length === 0) {
-            console.warn(`[GET /api/tenant/projects] No tenant found for firebaseUid: ${firebaseUid}`);
-            return res.json([]);
+        let tenantId = null;
+        if (firebaseUid) {
+            const tenantRes = await pool.query(`SELECT tenant_id FROM tenant_admins WHERE firebase_uid = $1
+         UNION
+         SELECT tenant_id FROM tenant_users WHERE firebase_uid = $1`, [firebaseUid]);
+            if (tenantRes.rows.length > 0)
+                tenantId = tenantRes.rows[0].tenant_id;
         }
-        const tenantId = tenantRes.rows[0].tenant_id;
+        if (!tenantId) {
+            const firstTenant = await pool.query('SELECT tenant_id FROM tenant_admins ORDER BY id ASC LIMIT 1');
+            if (firstTenant.rows.length > 0)
+                tenantId = firstTenant.rows[0].tenant_id;
+        }
+        if (!tenantId) {
+            tenantId = '1';
+        }
         const projectsRes = await pool.query(`SELECT id, project_id as "id", name, location, location_block as "locationBlock", 
               customer, commodity, contract_quantity as "contractQuantity", 
               contract_quantity_unit as "contractQuantityUnit", 
@@ -2620,16 +2630,25 @@ app.delete('/api/tenant/projects/:id', async (req, res) => {
 });
 // ─── WORKSITES ─────────────────────────────────────────────────────────────
 // GET Worksites
-app.get('/api/tenant/worksites/:firebaseUid', async (req, res) => {
-    const { firebaseUid } = req.params;
+app.get(['/api/tenant/worksites/:firebaseUid', '/api/tenant/worksites'], async (req, res) => {
+    const firebaseUid = req.params.firebaseUid || req.query.firebaseUid || req.query.uid;
     try {
-        const tenantRes = await pool.query(`SELECT tenant_id FROM tenant_admins WHERE firebase_uid = $1
-       UNION
-       SELECT tenant_id FROM tenant_users WHERE firebase_uid = $1`, [firebaseUid]);
-        if (tenantRes.rows.length === 0) {
-            return res.json([]);
+        let tenantId = null;
+        if (firebaseUid) {
+            const tenantRes = await pool.query(`SELECT tenant_id FROM tenant_admins WHERE firebase_uid = $1
+         UNION
+         SELECT tenant_id FROM tenant_users WHERE firebase_uid = $1`, [firebaseUid]);
+            if (tenantRes.rows.length > 0)
+                tenantId = tenantRes.rows[0].tenant_id;
         }
-        const tenantId = tenantRes.rows[0].tenant_id;
+        if (!tenantId) {
+            const firstTenant = await pool.query('SELECT tenant_id FROM tenant_admins ORDER BY id ASC LIMIT 1');
+            if (firstTenant.rows.length > 0)
+                tenantId = firstTenant.rows[0].tenant_id;
+        }
+        if (!tenantId) {
+            tenantId = '1';
+        }
         const worksitesRes = await pool.query(`SELECT id, worksite_id as "id", worksite_id as "worksiteId", name, location, type, supervisor, contact, 
               workers_count as "workersCount", geofence_status as "geofenceStatus", 
               operational_status as "operationalStatus", safety_rating as "safetyRating",
@@ -3165,7 +3184,7 @@ app.post('/api/tenant/work-orders/:id/convert-to-project', async (req, res) => {
             tenantId,
             nextProjId,
             wo.title,
-            wo.project_location_address || wo.worksite_name || 'N/A',
+            wo.unloading_location || wo.project_location_address || wo.loading_location || wo.worksite_name || 'N/A',
             effectiveDivision,
             customerInfo,
             wo.commodity || 'General Cargo',
@@ -3294,13 +3313,20 @@ app.get(['/api/tenant/vehicles/:firebaseUid', '/api/tenant/vehicles'], async (re
          purchase_cost as "purchaseCost",
          vendor,
          insurance_value as "insuranceValue",
+         insurance_start_date as "insuranceStartDate",
          insurance_expiry_date as "insuranceExpiryDate",
+         insurance_cost as "insuranceCost",
+         insurance_duration as "insuranceDuration",
+         insurance_policy_number as "insurancePolicyNumber",
+         insurance_history as "insuranceHistory",
          fitness_expiry_date as "fitnessExpiryDate",
          assigned_driver_name as "assignedDriverName",
          assigned_driver_phone as "assignedDriverPhone",
          assigned_project_id as "assignedProjectId",
          assigned_project_name as "assignedProjectName",
          current_location as "currentLocation",
+         fuel_power_type as "fuelPowerType",
+         fuel_consumption as "fuelConsumption",
          status,
          notes,
          created_at as "createdAt",
@@ -3317,7 +3343,7 @@ app.get(['/api/tenant/vehicles/:firebaseUid', '/api/tenant/vehicles'], async (re
 });
 // POST Vehicle
 app.post('/api/tenant/vehicles', async (req, res) => {
-    const { firebaseUid, vehicleNumber, fleetCode, vehicleType, make, model, year, registrationNumber, chassisNumber, engineNumber, tonCapacity, volumeCapacity, volumeUnit, purchaseDate, purchaseCost, vendor, insuranceValue, insuranceExpiryDate, fitnessExpiryDate, assignedDriverName, assignedDriverPhone, assignedProjectId, assignedProjectName, currentLocation, status, notes } = req.body;
+    const { firebaseUid, vehicleNumber, fleetCode, vehicleType, make, model, year, registrationNumber, chassisNumber, engineNumber, tonCapacity, volumeCapacity, volumeUnit, purchaseDate, purchaseCost, vendor, insuranceValue, insuranceStartDate, insuranceExpiryDate, insuranceCost, insuranceDuration, insurancePolicyNumber, fitnessExpiryDate, assignedDriverName, assignedDriverPhone, assignedProjectId, assignedProjectName, currentLocation, fuelPowerType, fuelConsumption, status, notes } = req.body;
     if (!vehicleNumber || !vehicleType) {
         return res.status(400).json({ error: 'Vehicle number and vehicle type are required' });
     }
@@ -3341,15 +3367,17 @@ app.post('/api/tenant/vehicles', async (req, res) => {
         const insertRes = await pool.query(`INSERT INTO tenant_vehicles (
          tenant_id, vehicle_number, fleet_code, vehicle_type, make, model, year,
          registration_number, chassis_number, engine_number, ton_capacity, volume_capacity,
-         volume_unit, purchase_date, purchase_cost, vendor, insurance_value, insurance_expiry_date,
+         volume_unit, purchase_date, purchase_cost, vendor, insurance_value, 
+         insurance_start_date, insurance_expiry_date, insurance_cost, insurance_duration, insurance_policy_number,
          fitness_expiry_date, assigned_driver_name, assigned_driver_phone, assigned_project_id,
-         assigned_project_name, current_location, status, notes
+         assigned_project_name, current_location, fuel_power_type, fuel_consumption, status, notes
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7,
          $8, $9, $10, $11, $12,
-         $13, $14, $15, $16, $17, $18,
-         $19, $20, $21, $22,
-         $23, $24, $25, $26
+         $13, $14, $15, $16, $17,
+         $18, $19, $20, $21, $22,
+         $23, $24, $25, $26,
+         $27, $28, $29, $30, $31, $32
        ) RETURNING 
          id,
          tenant_id as "tenantId",
@@ -3369,13 +3397,19 @@ app.post('/api/tenant/vehicles', async (req, res) => {
          purchase_cost as "purchaseCost",
          vendor,
          insurance_value as "insuranceValue",
+         insurance_start_date as "insuranceStartDate",
          insurance_expiry_date as "insuranceExpiryDate",
+         insurance_cost as "insuranceCost",
+         insurance_duration as "insuranceDuration",
+         insurance_policy_number as "insurancePolicyNumber",
          fitness_expiry_date as "fitnessExpiryDate",
          assigned_driver_name as "assignedDriverName",
          assigned_driver_phone as "assignedDriverPhone",
          assigned_project_id as "assignedProjectId",
          assigned_project_name as "assignedProjectName",
          current_location as "currentLocation",
+         fuel_power_type as "fuelPowerType",
+         fuel_consumption as "fuelConsumption",
          status,
          notes,
          created_at as "createdAt",
@@ -3404,6 +3438,8 @@ app.post('/api/tenant/vehicles', async (req, res) => {
             assignedProjectId || null,
             assignedProjectName?.trim() || null,
             currentLocation?.trim() || null,
+            fuelPowerType?.trim() || 'Diesel',
+            fuelConsumption?.trim() || null,
             status || 'Active',
             notes?.trim() || null
         ]);
@@ -3417,7 +3453,7 @@ app.post('/api/tenant/vehicles', async (req, res) => {
 // PUT Vehicle
 app.put('/api/tenant/vehicles/:id', async (req, res) => {
     const { id } = req.params;
-    const { vehicleNumber, fleetCode, vehicleType, make, model, year, registrationNumber, chassisNumber, engineNumber, tonCapacity, volumeCapacity, volumeUnit, purchaseDate, purchaseCost, vendor, insuranceValue, insuranceExpiryDate, fitnessExpiryDate, assignedDriverName, assignedDriverPhone, assignedProjectId, assignedProjectName, currentLocation, status, notes } = req.body;
+    const { vehicleNumber, fleetCode, vehicleType, make, model, year, registrationNumber, chassisNumber, engineNumber, tonCapacity, volumeCapacity, volumeUnit, purchaseDate, purchaseCost, vendor, insuranceValue, insuranceStartDate, insuranceExpiryDate, insuranceCost, insuranceDuration, insurancePolicyNumber, fitnessExpiryDate, assignedDriverName, assignedDriverPhone, assignedProjectId, assignedProjectName, currentLocation, fuelPowerType, fuelConsumption, status, notes } = req.body;
     try {
         const updateRes = await pool.query(`UPDATE tenant_vehicles
        SET vehicle_number = COALESCE($1, vehicle_number),
@@ -3436,17 +3472,23 @@ app.put('/api/tenant/vehicles/:id', async (req, res) => {
            purchase_cost = $14,
            vendor = $15,
            insurance_value = $16,
-           insurance_expiry_date = $17,
-           fitness_expiry_date = $18,
-           assigned_driver_name = $19,
-           assigned_driver_phone = $20,
-           assigned_project_id = $21,
-           assigned_project_name = $22,
-           current_location = $23,
-           status = COALESCE($24, status),
-           notes = $25,
+           insurance_start_date = $17,
+           insurance_expiry_date = $18,
+           insurance_cost = $19,
+           insurance_duration = $20,
+           insurance_policy_number = $21,
+           fitness_expiry_date = $22,
+           assigned_driver_name = $23,
+           assigned_driver_phone = $24,
+           assigned_project_id = $25,
+           assigned_project_name = $26,
+           current_location = $27,
+           fuel_power_type = COALESCE($28, fuel_power_type),
+           fuel_consumption = COALESCE($29, fuel_consumption),
+           status = COALESCE($30, status),
+           notes = $31,
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = $26
+       WHERE id = $32
        RETURNING 
          id,
          tenant_id as "tenantId",
@@ -3466,13 +3508,19 @@ app.put('/api/tenant/vehicles/:id', async (req, res) => {
          purchase_cost as "purchaseCost",
          vendor,
          insurance_value as "insuranceValue",
+         insurance_start_date as "insuranceStartDate",
          insurance_expiry_date as "insuranceExpiryDate",
+         insurance_cost as "insuranceCost",
+         insurance_duration as "insuranceDuration",
+         insurance_policy_number as "insurancePolicyNumber",
          fitness_expiry_date as "fitnessExpiryDate",
          assigned_driver_name as "assignedDriverName",
          assigned_driver_phone as "assignedDriverPhone",
          assigned_project_id as "assignedProjectId",
          assigned_project_name as "assignedProjectName",
          current_location as "currentLocation",
+         fuel_power_type as "fuelPowerType",
+         fuel_consumption as "fuelConsumption",
          status,
          notes,
          created_at as "createdAt",
@@ -3493,13 +3541,19 @@ app.put('/api/tenant/vehicles/:id', async (req, res) => {
             purchaseCost !== undefined ? parseFloat(purchaseCost) : 0,
             vendor?.trim() || null,
             insuranceValue !== undefined ? parseFloat(insuranceValue) : 0,
+            insuranceStartDate || null,
             insuranceExpiryDate || null,
+            insuranceCost !== undefined ? parseFloat(insuranceCost) : 0,
+            insuranceDuration?.trim() || null,
+            insurancePolicyNumber?.trim() || null,
             fitnessExpiryDate || null,
             assignedDriverName?.trim() || null,
             assignedDriverPhone?.trim() || null,
             assignedProjectId || null,
             assignedProjectName?.trim() || null,
             currentLocation?.trim() || null,
+            fuelPowerType?.trim() || null,
+            fuelConsumption?.trim() || null,
             status || null,
             notes?.trim() || null,
             id
@@ -3568,11 +3622,19 @@ app.get(['/api/tenant/heavy-equipment/:firebaseUid', '/api/tenant/heavy-equipmen
          dumper_payload_capacity as "dumperPayloadCapacity",
          operating_weight as "operatingWeight",
          fuel_type as "fuelType",
+         fuel_power_type as "fuelPowerType",
+         fuel_consumption as "fuelConsumption",
          hour_meter_reading as "hourMeterReading",
          purchase_date as "purchaseDate",
          purchase_cost as "purchaseCost",
          vendor,
          insurance_value as "insuranceValue",
+         insurance_start_date as "insuranceStartDate",
+         insurance_expiry_date as "insuranceExpiryDate",
+         insurance_cost as "insuranceCost",
+         insurance_duration as "insuranceDuration",
+         insurance_policy_number as "insurancePolicyNumber",
+         insurance_history as "insuranceHistory",
          assigned_operator_name as "assignedOperatorName",
          assigned_operator_phone as "assignedOperatorPhone",
          assigned_project_id as "assignedProjectId",
@@ -3594,7 +3656,7 @@ app.get(['/api/tenant/heavy-equipment/:firebaseUid', '/api/tenant/heavy-equipmen
 });
 // POST Heavy Equipment
 app.post('/api/tenant/heavy-equipment', async (req, res) => {
-    const { firebaseUid, equipmentId, equipmentNumber, equipmentType, make, model, serialNumber, manufacturingYear, excavatorBucketCapacity, boomLength, loaderBucketCapacity, craneLiftingCapacity, forkliftForkCapacity, dumperPayloadCapacity, operatingWeight, fuelType, hourMeterReading, purchaseDate, purchaseCost, vendor, insuranceValue, assignedOperatorName, assignedOperatorPhone, assignedProjectId, assignedProjectName, assignedWorksiteName, status, notes } = req.body;
+    const { firebaseUid, equipmentId, equipmentNumber, equipmentType, make, model, serialNumber, manufacturingYear, excavatorBucketCapacity, boomLength, loaderBucketCapacity, craneLiftingCapacity, forkliftForkCapacity, dumperPayloadCapacity, operatingWeight, fuelType, fuelPowerType, fuelConsumption, hourMeterReading, purchaseDate, purchaseCost, vendor, insuranceValue, insuranceStartDate, insuranceExpiryDate, insuranceCost, insuranceDuration, insurancePolicyNumber, assignedOperatorName, assignedOperatorPhone, assignedProjectId, assignedProjectName, assignedWorksiteName, status, notes } = req.body;
     if (!equipmentId || !equipmentNumber || !equipmentType) {
         return res.status(400).json({ error: 'Equipment ID, equipment number, and equipment type are required' });
     }
@@ -3619,16 +3681,18 @@ app.post('/api/tenant/heavy-equipment', async (req, res) => {
          tenant_id, equipment_id, equipment_number, equipment_type, make, model, serial_number,
          manufacturing_year, excavator_bucket_capacity, boom_length, loader_bucket_capacity,
          crane_lifting_capacity, forklift_fork_capacity, dumper_payload_capacity, operating_weight,
-         fuel_type, hour_meter_reading, purchase_date, purchase_cost, vendor, insurance_value,
+         fuel_type, fuel_power_type, fuel_consumption, hour_meter_reading, purchase_date, purchase_cost, vendor, 
+         insurance_value, insurance_start_date, insurance_expiry_date, insurance_cost, insurance_duration, insurance_policy_number,
          assigned_operator_name, assigned_operator_phone, assigned_project_id, assigned_project_name,
          assigned_worksite_name, status, notes
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7,
          $8, $9, $10, $11,
          $12, $13, $14, $15,
-         $16, $17, $18, $19, $20, $21,
-         $22, $23, $24, $25,
-         $26, $27, $28
+         $16, $17, $18, $19, $20, $21, $22,
+         $23, $24, $25, $26, $27, $28,
+         $29, $30, $31, $32,
+         $33, $34, $35
        ) RETURNING 
          id,
          tenant_id as "tenantId",
@@ -3652,6 +3716,11 @@ app.post('/api/tenant/heavy-equipment', async (req, res) => {
          purchase_cost as "purchaseCost",
          vendor,
          insurance_value as "insuranceValue",
+         insurance_start_date as "insuranceStartDate",
+         insurance_expiry_date as "insuranceExpiryDate",
+         insurance_cost as "insuranceCost",
+         insurance_duration as "insuranceDuration",
+         insurance_policy_number as "insurancePolicyNumber",
          assigned_operator_name as "assignedOperatorName",
          assigned_operator_phone as "assignedOperatorPhone",
          assigned_project_id as "assignedProjectId",
@@ -3676,12 +3745,19 @@ app.post('/api/tenant/heavy-equipment', async (req, res) => {
             forkliftForkCapacity ? parseFloat(forkliftForkCapacity) : 0,
             dumperPayloadCapacity ? parseFloat(dumperPayloadCapacity) : 0,
             operatingWeight ? parseFloat(operatingWeight) : 0,
-            fuelType || 'Diesel',
+            fuelPowerType || fuelType || 'Diesel',
+            fuelPowerType || 'Diesel',
+            fuelConsumption?.trim() || null,
             hourMeterReading ? parseFloat(hourMeterReading) : 0,
             purchaseDate || null,
             purchaseCost ? parseFloat(purchaseCost) : 0,
             vendor?.trim() || null,
             insuranceValue ? parseFloat(insuranceValue) : 0,
+            insuranceStartDate || null,
+            insuranceExpiryDate || null,
+            insuranceCost ? parseFloat(insuranceCost) : 0,
+            insuranceDuration?.trim() || null,
+            insurancePolicyNumber?.trim() || null,
             assignedOperatorName?.trim() || null,
             assignedOperatorPhone?.trim() || null,
             assignedProjectId || null,
@@ -3700,7 +3776,7 @@ app.post('/api/tenant/heavy-equipment', async (req, res) => {
 // PUT Heavy Equipment
 app.put('/api/tenant/heavy-equipment/:id', async (req, res) => {
     const { id } = req.params;
-    const { equipmentId, equipmentNumber, equipmentType, make, model, serialNumber, manufacturingYear, excavatorBucketCapacity, boomLength, loaderBucketCapacity, craneLiftingCapacity, forkliftForkCapacity, dumperPayloadCapacity, operatingWeight, fuelType, hourMeterReading, purchaseDate, purchaseCost, vendor, insuranceValue, assignedOperatorName, assignedOperatorPhone, assignedProjectId, assignedProjectName, assignedWorksiteName, status, notes } = req.body;
+    const { equipmentId, equipmentNumber, equipmentType, make, model, serialNumber, manufacturingYear, excavatorBucketCapacity, boomLength, loaderBucketCapacity, craneLiftingCapacity, forkliftForkCapacity, dumperPayloadCapacity, operatingWeight, fuelType, fuelPowerType, fuelConsumption, hourMeterReading, purchaseDate, purchaseCost, vendor, insuranceValue, insuranceStartDate, insuranceExpiryDate, insuranceCost, insuranceDuration, insurancePolicyNumber, assignedOperatorName, assignedOperatorPhone, assignedProjectId, assignedProjectName, assignedWorksiteName, status, notes } = req.body;
     try {
         const updateRes = await pool.query(`UPDATE tenant_heavy_equipment
        SET equipment_id = COALESCE($1, equipment_id),
@@ -3718,20 +3794,27 @@ app.put('/api/tenant/heavy-equipment/:id', async (req, res) => {
            dumper_payload_capacity = $13,
            operating_weight = $14,
            fuel_type = COALESCE($15, fuel_type),
-           hour_meter_reading = $16,
-           purchase_date = $17,
-           purchase_cost = $18,
-           vendor = $19,
-           insurance_value = $20,
-           assigned_operator_name = $21,
-           assigned_operator_phone = $22,
-           assigned_project_id = $23,
-           assigned_project_name = $24,
-           assigned_worksite_name = $25,
-           status = COALESCE($26, status),
-           notes = $27,
+           fuel_power_type = COALESCE($16, fuel_power_type),
+           fuel_consumption = COALESCE($17, fuel_consumption),
+           hour_meter_reading = $18,
+           purchase_date = $19,
+           purchase_cost = $20,
+           vendor = $21,
+           insurance_value = $22,
+           insurance_start_date = $23,
+           insurance_expiry_date = $24,
+           insurance_cost = $25,
+           insurance_duration = $26,
+           insurance_policy_number = $27,
+           assigned_operator_name = $28,
+           assigned_operator_phone = $29,
+           assigned_project_id = $30,
+           assigned_project_name = $31,
+           assigned_worksite_name = $32,
+           status = COALESCE($33, status),
+           notes = $34,
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = $28
+       WHERE id = $35
        RETURNING 
          id,
          tenant_id as "tenantId",
@@ -3750,11 +3833,18 @@ app.put('/api/tenant/heavy-equipment/:id', async (req, res) => {
          dumper_payload_capacity as "dumperPayloadCapacity",
          operating_weight as "operatingWeight",
          fuel_type as "fuelType",
+         fuel_power_type as "fuelPowerType",
+         fuel_consumption as "fuelConsumption",
          hour_meter_reading as "hourMeterReading",
          purchase_date as "purchaseDate",
          purchase_cost as "purchaseCost",
          vendor,
          insurance_value as "insuranceValue",
+         insurance_start_date as "insuranceStartDate",
+         insurance_expiry_date as "insuranceExpiryDate",
+         insurance_cost as "insuranceCost",
+         insurance_duration as "insuranceDuration",
+         insurance_policy_number as "insurancePolicyNumber",
          assigned_operator_name as "assignedOperatorName",
          assigned_operator_phone as "assignedOperatorPhone",
          assigned_project_id as "assignedProjectId",
@@ -3779,11 +3869,18 @@ app.put('/api/tenant/heavy-equipment/:id', async (req, res) => {
             dumperPayloadCapacity !== undefined ? parseFloat(dumperPayloadCapacity) : 0,
             operatingWeight !== undefined ? parseFloat(operatingWeight) : 0,
             fuelType || 'Diesel',
+            fuelPowerType || 'Diesel',
+            fuelConsumption?.trim() || null,
             hourMeterReading !== undefined ? parseFloat(hourMeterReading) : 0,
             purchaseDate || null,
             purchaseCost !== undefined ? parseFloat(purchaseCost) : 0,
             vendor?.trim() || null,
             insuranceValue !== undefined ? parseFloat(insuranceValue) : 0,
+            insuranceStartDate || null,
+            insuranceExpiryDate || null,
+            insuranceCost !== undefined ? parseFloat(insuranceCost) : 0,
+            insuranceDuration?.trim() || null,
+            insurancePolicyNumber?.trim() || null,
             assignedOperatorName?.trim() || null,
             assignedOperatorPhone?.trim() || null,
             assignedProjectId || null,
@@ -3804,6 +3901,154 @@ app.put('/api/tenant/heavy-equipment/:id', async (req, res) => {
     }
 });
 // DELETE Heavy Equipment
+// PATCH Renew Vehicle Insurance
+app.patch('/api/tenant/vehicles/:id/renew-insurance', async (req, res) => {
+    const { id } = req.params;
+    const { insuranceStartDate, insuranceExpiryDate, insuranceCost, insuranceValue, insuranceDuration, insurancePolicyNumber } = req.body;
+    try {
+        // 1. Fetch current insurance to archive into insurance_history
+        const existingRes = await pool.query(`SELECT insurance_start_date, insurance_expiry_date, insurance_cost, insurance_value, insurance_duration, insurance_policy_number, insurance_history
+       FROM tenant_vehicles WHERE id = $1`, [id]);
+        let history = [];
+        if (existingRes.rows.length > 0) {
+            const ex = existingRes.rows[0];
+            if (Array.isArray(ex.insurance_history)) {
+                history = [...ex.insurance_history];
+            }
+            else if (typeof ex.insurance_history === 'string' && ex.insurance_history) {
+                try {
+                    history = JSON.parse(ex.insurance_history);
+                }
+                catch (e) {
+                    history = [];
+                }
+            }
+            // Archive old policy if it had data
+            if (ex.insurance_policy_number || ex.insurance_expiry_date || ex.insurance_start_date || (ex.insurance_cost && Number(ex.insurance_cost) > 0)) {
+                history.unshift({
+                    policyNumber: ex.insurance_policy_number || 'N/A',
+                    startDate: ex.insurance_start_date || '',
+                    duration: ex.insurance_duration || '',
+                    expiryDate: ex.insurance_expiry_date || '',
+                    cost: ex.insurance_cost ? parseFloat(ex.insurance_cost) : 0,
+                    insuranceValue: ex.insurance_value ? parseFloat(ex.insurance_value) : 0,
+                    renewedAt: new Date().toISOString()
+                });
+            }
+        }
+        const updateRes = await pool.query(`UPDATE tenant_vehicles
+       SET insurance_start_date = $1,
+           insurance_expiry_date = $2,
+           insurance_cost = $3,
+           insurance_value = $4,
+           insurance_duration = $5,
+           insurance_policy_number = $6,
+           insurance_history = $7::jsonb,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $8
+       RETURNING 
+         id,
+         vehicle_number as "vehicleNumber",
+         insurance_value as "insuranceValue",
+         insurance_start_date as "insuranceStartDate",
+         insurance_expiry_date as "insuranceExpiryDate",
+         insurance_cost as "insuranceCost",
+         insurance_duration as "insuranceDuration",
+         insurance_policy_number as "insurancePolicyNumber",
+         insurance_history as "insuranceHistory"`, [
+            insuranceStartDate || null,
+            insuranceExpiryDate || null,
+            insuranceCost !== undefined ? parseFloat(insuranceCost) : 0,
+            insuranceValue !== undefined ? parseFloat(insuranceValue) : 0,
+            insuranceDuration?.trim() || null,
+            insurancePolicyNumber?.trim() || null,
+            JSON.stringify(history),
+            id
+        ]);
+        if (updateRes.rows.length === 0) {
+            return res.status(404).json({ error: 'Vehicle not found' });
+        }
+        res.json({ message: 'Vehicle insurance renewed successfully', vehicle: updateRes.rows[0] });
+    }
+    catch (err) {
+        console.error('[PATCH /api/tenant/vehicles/:id/renew-insurance] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+// PATCH Renew Heavy Equipment Insurance
+app.patch('/api/tenant/heavy-equipment/:id/renew-insurance', async (req, res) => {
+    const { id } = req.params;
+    const { insuranceStartDate, insuranceExpiryDate, insuranceCost, insuranceValue, insuranceDuration, insurancePolicyNumber } = req.body;
+    try {
+        // 1. Fetch current insurance to archive into insurance_history
+        const existingRes = await pool.query(`SELECT insurance_start_date, insurance_expiry_date, insurance_cost, insurance_value, insurance_duration, insurance_policy_number, insurance_history
+       FROM tenant_heavy_equipment WHERE id = $1`, [id]);
+        let history = [];
+        if (existingRes.rows.length > 0) {
+            const ex = existingRes.rows[0];
+            if (Array.isArray(ex.insurance_history)) {
+                history = [...ex.insurance_history];
+            }
+            else if (typeof ex.insurance_history === 'string' && ex.insurance_history) {
+                try {
+                    history = JSON.parse(ex.insurance_history);
+                }
+                catch (e) {
+                    history = [];
+                }
+            }
+            // Archive old policy if it had data
+            if (ex.insurance_policy_number || ex.insurance_expiry_date || ex.insurance_start_date || (ex.insurance_cost && Number(ex.insurance_cost) > 0)) {
+                history.unshift({
+                    policyNumber: ex.insurance_policy_number || 'N/A',
+                    startDate: ex.insurance_start_date || '',
+                    duration: ex.insurance_duration || '',
+                    expiryDate: ex.insurance_expiry_date || '',
+                    cost: ex.insurance_cost ? parseFloat(ex.insurance_cost) : 0,
+                    insuranceValue: ex.insurance_value ? parseFloat(ex.insurance_value) : 0,
+                    renewedAt: new Date().toISOString()
+                });
+            }
+        }
+        const updateRes = await pool.query(`UPDATE tenant_heavy_equipment
+       SET insurance_start_date = $1,
+           insurance_expiry_date = $2,
+           insurance_cost = $3,
+           insurance_value = $4,
+           insurance_duration = $5,
+           insurance_policy_number = $6,
+           insurance_history = $7::jsonb,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $8
+       RETURNING 
+         id,
+         equipment_id as "equipmentId",
+         insurance_value as "insuranceValue",
+         insurance_start_date as "insuranceStartDate",
+         insurance_expiry_date as "insuranceExpiryDate",
+         insurance_cost as "insuranceCost",
+         insurance_duration as "insuranceDuration",
+         insurance_policy_number as "insurancePolicyNumber",
+         insurance_history as "insuranceHistory"`, [
+            insuranceStartDate || null,
+            insuranceExpiryDate || null,
+            insuranceCost !== undefined ? parseFloat(insuranceCost) : 0,
+            insuranceValue !== undefined ? parseFloat(insuranceValue) : 0,
+            insuranceDuration?.trim() || null,
+            insurancePolicyNumber?.trim() || null,
+            JSON.stringify(history),
+            id
+        ]);
+        if (updateRes.rows.length === 0) {
+            return res.status(404).json({ error: 'Heavy Equipment not found' });
+        }
+        res.json({ message: 'Heavy equipment insurance renewed successfully', equipment: updateRes.rows[0] });
+    }
+    catch (err) {
+        console.error('[PATCH /api/tenant/heavy-equipment/:id/renew-insurance] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
 app.delete('/api/tenant/heavy-equipment/:id', async (req, res) => {
     const { id } = req.params;
     try {
@@ -3815,6 +4060,701 @@ app.delete('/api/tenant/heavy-equipment/:id', async (req, res) => {
     }
     catch (err) {
         console.error(`[DELETE /api/tenant/heavy-equipment/:id] Error:`, err);
+        res.status(500).json({ error: err.message });
+    }
+});
+// ─── VEHICLE & EQUIPMENT ASSIGNMENT ENDPOINTS ──────────────────────────────
+// GET All Vehicle Assignments
+app.get(['/api/tenant/vehicle-assignments/:firebaseUid', '/api/tenant/vehicle-assignments'], async (req, res) => {
+    const firebaseUid = req.params.firebaseUid || req.query.firebaseUid || req.query.uid;
+    try {
+        let tenantId = null;
+        if (firebaseUid) {
+            const tenantRes = await pool.query(`SELECT tenant_id FROM tenant_admins WHERE firebase_uid = $1
+         UNION
+         SELECT tenant_id FROM tenant_users WHERE firebase_uid = $1`, [firebaseUid]);
+            if (tenantRes.rows.length > 0)
+                tenantId = tenantRes.rows[0].tenant_id;
+        }
+        if (!tenantId) {
+            const firstTenant = await pool.query('SELECT tenant_id FROM tenant_admins ORDER BY id ASC LIMIT 1');
+            if (firstTenant.rows.length > 0)
+                tenantId = firstTenant.rows[0].tenant_id;
+        }
+        if (!tenantId)
+            tenantId = '1';
+        const { status, assetType, projectId } = req.query;
+        let query = `
+      SELECT 
+        id,
+        tenant_id as "tenantId",
+        asset_type as "assetType",
+        asset_id as "assetId",
+        asset_number as "assetNumber",
+        asset_title as "assetTitle",
+        project_id as "projectId",
+        project_name as "projectName",
+        worksite_id as "worksiteId",
+        worksite_name as "worksiteName",
+        assigned_to_type as "assignedToType",
+        assigned_to_name as "assignedToName",
+        assigned_to_phone as "assignedToPhone",
+        start_date as "startDate",
+        expected_end_date as "expectedEndDate",
+        actual_end_date as "actualEndDate",
+        meter_reading_at_assign as "meterReadingAtAssign",
+        meter_reading_at_release as "meterReadingAtRelease",
+        status,
+        notes,
+        created_at as "createdAt",
+        updated_at as "updatedAt"
+      FROM tenant_vehicle_assignments
+      WHERE tenant_id = $1
+    `;
+        const params = [tenantId];
+        if (status && status !== 'All') {
+            params.push(status);
+            query += ` AND status = ${params.length}`;
+        }
+        if (assetType && assetType !== 'All') {
+            params.push(assetType);
+            query += ` AND asset_type = ${params.length}`;
+        }
+        if (projectId) {
+            params.push(projectId);
+            query += ` AND project_id = ${params.length}`;
+        }
+        query += ' ORDER BY id DESC';
+        const result = await pool.query(query, params);
+        res.json(result.rows);
+    }
+    catch (err) {
+        console.error('[GET /api/tenant/vehicle-assignments] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+// POST Create Vehicle Assignment
+app.post('/api/tenant/vehicle-assignments', async (req, res) => {
+    const items = Array.isArray(req.body.items)
+        ? req.body.items
+        : (Array.isArray(req.body) ? req.body : [req.body]);
+    try {
+        let tenantId = null;
+        const firebaseUid = req.body.firebaseUid || (items[0] && items[0].firebaseUid);
+        if (firebaseUid) {
+            const tenantRes = await pool.query(`SELECT tenant_id FROM tenant_admins WHERE firebase_uid = $1
+         UNION
+         SELECT tenant_id FROM tenant_users WHERE firebase_uid = $1`, [firebaseUid]);
+            if (tenantRes.rows.length > 0)
+                tenantId = tenantRes.rows[0].tenant_id;
+        }
+        if (!tenantId) {
+            const firstTenant = await pool.query('SELECT tenant_id FROM tenant_admins ORDER BY id ASC LIMIT 1');
+            if (firstTenant.rows.length > 0)
+                tenantId = firstTenant.rows[0].tenant_id;
+        }
+        if (!tenantId)
+            tenantId = '1';
+        const createdAssignments = [];
+        for (const item of items) {
+            const { assetType, assetId, assetNumber, assetTitle, projectId, projectName, worksiteId, worksiteName, assignedToType, assignedToName, assignedToPhone, helperName, helperPhone, helperRole, helperId, startDate, expectedEndDate, meterReadingAtAssign, status, notes } = item;
+            if (!assetId || !assetNumber)
+                continue;
+            const insertRes = await pool.query(`INSERT INTO tenant_vehicle_assignments (
+          tenant_id,
+          asset_type,
+          asset_id,
+          asset_number,
+          asset_title,
+          project_id,
+          project_name,
+          worksite_id,
+          worksite_name,
+          assigned_to_type,
+          assigned_to_name,
+          assigned_to_phone,
+          helper_name,
+          helper_phone,
+          helper_role,
+          helper_id,
+          start_date,
+          expected_end_date,
+          meter_reading_at_assign,
+          status,
+          notes
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+        RETURNING 
+          id,
+          tenant_id as "tenantId",
+          asset_type as "assetType",
+          asset_id as "assetId",
+          asset_number as "assetNumber",
+          asset_title as "assetTitle",
+          project_id as "projectId",
+          project_name as "projectName",
+          worksite_id as "worksiteId",
+          worksite_name as "worksiteName",
+          assigned_to_type as "assignedToType",
+          assigned_to_name as "assignedToName",
+          assigned_to_phone as "assignedToPhone",
+          helper_name as "helperName",
+          helper_phone as "helperPhone",
+          helper_role as "helperRole",
+          helper_id as "helperId",
+          start_date as "startDate",
+          expected_end_date as "expectedEndDate",
+          actual_end_date as "actualEndDate",
+          meter_reading_at_assign as "meterReadingAtAssign",
+          meter_reading_at_release as "meterReadingAtRelease",
+          status,
+          notes,
+          created_at as "createdAt",
+          updated_at as "updatedAt"`, [
+                tenantId,
+                assetType || 'vehicle',
+                String(assetId),
+                assetNumber?.trim() || '',
+                assetTitle?.trim() || null,
+                projectId || null,
+                projectName?.trim() || null,
+                worksiteId || null,
+                worksiteName?.trim() || null,
+                assignedToType || 'driver',
+                assignedToName?.trim() || null,
+                assignedToPhone?.trim() || null,
+                helperName?.trim() || null,
+                helperPhone?.trim() || null,
+                helperRole?.trim() || null,
+                helperId ? String(helperId) : null,
+                startDate || new Date().toISOString().split('T')[0],
+                expectedEndDate || null,
+                meterReadingAtAssign !== undefined ? parseFloat(meterReadingAtAssign) : 0,
+                status || 'Active',
+                notes?.trim() || null
+            ]);
+            // Sync vehicle / equipment status
+            if (assetType === 'vehicle') {
+                await pool.query(`UPDATE tenant_vehicles 
+           SET status = 'In Operation',
+               assigned_project_id = $1,
+               assigned_project_name = $2,
+               assigned_driver_name = $3,
+               assigned_driver_phone = $4,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE id::text = $5 OR vehicle_number = $6`, [projectId || null, projectName || null, assignedToName || null, assignedToPhone || null, String(assetId), assetNumber]);
+            }
+            else {
+                await pool.query(`UPDATE tenant_heavy_equipment 
+           SET status = 'In Operation',
+               assigned_project_id = $1,
+               assigned_project_name = $2,
+               assigned_worksite_name = $3,
+               assigned_operator_name = $4,
+               assigned_operator_phone = $5,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE id::text = $6`, [projectId || null, projectName || null, worksiteName || null, assignedToName || null, assignedToPhone || null, String(assetId)]);
+            }
+            createdAssignments.push(insertRes.rows[0]);
+        }
+        if (Array.isArray(req.body.items) || Array.isArray(req.body)) {
+            res.status(201).json(createdAssignments);
+        }
+        else {
+            res.status(201).json(createdAssignments[0] || { message: 'Created' });
+        }
+    }
+    catch (err) {
+        console.error('[POST /api/tenant/vehicle-assignments] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+app.put('/api/tenant/vehicle-assignments/:id', async (req, res) => {
+    const { id } = req.params;
+    const { projectId, projectName, worksiteId, worksiteName, assignedToType, assignedToName, assignedToPhone, startDate, expectedEndDate, meterReadingAtAssign, notes, status } = req.body;
+    try {
+        const updateRes = await pool.query(`UPDATE tenant_vehicle_assignments
+       SET project_id = $1,
+           project_name = $2,
+           worksite_id = $3,
+           worksite_name = $4,
+           assigned_to_type = $5,
+           assigned_to_name = $6,
+           assigned_to_phone = $7,
+           start_date = $8,
+           expected_end_date = $9,
+           meter_reading_at_assign = $10,
+           notes = $11,
+           status = COALESCE($12, status),
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $13
+       RETURNING 
+         id,
+         tenant_id as "tenantId",
+         asset_type as "assetType",
+         asset_id as "assetId",
+         asset_number as "assetNumber",
+         asset_title as "assetTitle",
+         project_id as "projectId",
+         project_name as "projectName",
+         worksite_id as "worksiteId",
+         worksite_name as "worksiteName",
+         assigned_to_type as "assignedToType",
+         assigned_to_name as "assignedToName",
+         assigned_to_phone as "assignedToPhone",
+         start_date as "startDate",
+         expected_end_date as "expectedEndDate",
+         actual_end_date as "actualEndDate",
+         meter_reading_at_assign as "meterReadingAtAssign",
+         meter_reading_at_release as "meterReadingAtRelease",
+         status,
+         notes,
+         created_at as "createdAt",
+         updated_at as "updatedAt"`, [
+            projectId || null,
+            projectName?.trim() || null,
+            worksiteId || null,
+            worksiteName?.trim() || null,
+            assignedToType || 'driver',
+            assignedToName?.trim() || null,
+            assignedToPhone?.trim() || null,
+            startDate || null,
+            expectedEndDate || null,
+            meterReadingAtAssign !== undefined ? parseFloat(meterReadingAtAssign) : 0,
+            notes?.trim() || null,
+            status || null,
+            id
+        ]);
+        if (updateRes.rows.length === 0) {
+            return res.status(404).json({ error: 'Assignment not found' });
+        }
+        res.json(updateRes.rows[0]);
+    }
+    catch (err) {
+        console.error('[PUT /api/tenant/vehicle-assignments/:id] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+// PATCH Release / Complete Assignment
+app.patch('/api/tenant/vehicle-assignments/:id/release', async (req, res) => {
+    const { id } = req.params;
+    const { actualEndDate, meterReadingAtRelease, notes } = req.body;
+    try {
+        const updateRes = await pool.query(`UPDATE tenant_vehicle_assignments
+       SET status = 'Released',
+           actual_end_date = COALESCE($1, CURRENT_DATE::text),
+           meter_reading_at_release = $2,
+           notes = COALESCE($3, notes),
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $4
+       RETURNING 
+         id,
+         asset_type as "assetType",
+         asset_id as "assetId"`, [
+            actualEndDate || new Date().toISOString().split('T')[0],
+            meterReadingAtRelease !== undefined ? parseFloat(meterReadingAtRelease) : null,
+            notes?.trim() || null,
+            id
+        ]);
+        if (updateRes.rows.length === 0) {
+            return res.status(404).json({ error: 'Assignment not found' });
+        }
+        const { assetType, assetId } = updateRes.rows[0];
+        if (assetType === 'vehicle') {
+            await pool.query(`UPDATE tenant_vehicles 
+         SET status = 'Idle',
+             assigned_project_id = NULL,
+             assigned_project_name = NULL,
+             assigned_driver_name = NULL,
+             assigned_driver_phone = NULL,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1`, [assetId]);
+        }
+        else {
+            await pool.query(`UPDATE tenant_heavy_equipment 
+         SET status = 'Idle',
+             assigned_project_id = NULL,
+             assigned_project_name = NULL,
+             assigned_worksite_name = NULL,
+             assigned_operator_name = NULL,
+             assigned_operator_phone = NULL,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1`, [assetId]);
+        }
+        res.json({ message: 'Asset assignment released successfully', assignment: updateRes.rows[0] });
+    }
+    catch (err) {
+        console.error('[PATCH /api/tenant/vehicle-assignments/:id/release] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+// DELETE Assignment
+app.delete('/api/tenant/vehicle-assignments/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const deleteRes = await pool.query('DELETE FROM tenant_vehicle_assignments WHERE id = $1 RETURNING *', [id]);
+        if (deleteRes.rows.length === 0) {
+            return res.status(404).json({ error: 'Assignment not found' });
+        }
+        res.json({ message: 'Assignment record deleted', assignment: deleteRes.rows[0] });
+    }
+    catch (err) {
+        console.error('[DELETE /api/tenant/vehicle-assignments/:id] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+// ─────────────────────────────────────────────────────────────────────────────
+// FLEET DAILY LOGS, FUEL TELEMETRY & RUNNING LOGS ENDPOINTS
+// ─────────────────────────────────────────────────────────────────────────────
+// GET Fleet Operational Stats (Rollup by project and overall fleet KPI)
+app.get('/api/tenant/fleet-logs/stats', async (req, res) => {
+    try {
+        const statsRes = await pool.query(`
+      SELECT 
+        COUNT(DISTINCT asset_number) AS "activeAssetsCount",
+        COALESCE(SUM(distance_run), 0) AS "totalKmRun",
+        COALESCE(SUM(fuel_filled_liters), 0) AS "totalFuelLiters",
+        COALESCE(SUM(fuel_total_cost), 0) AS "totalFuelCost",
+        COALESCE(SUM(toll_amount + fastag_deduction), 0) AS "totalTollExpenses",
+        COALESCE(SUM(trips_count), 0) AS "totalTripsCount",
+        CASE 
+          WHEN SUM(fuel_filled_liters) > 0 THEN ROUND(SUM(distance_run) / SUM(fuel_filled_liters), 2)
+          ELSE 0 
+        END AS "avgMileageKmPerLiter"
+      FROM tenant_fleet_daily_logs
+    `);
+        // Project breakdown
+        const projRes = await pool.query(`
+      SELECT 
+        COALESCE(project_name, 'Unassigned Project') AS "projectName",
+        COUNT(*) AS "logsCount",
+        COALESCE(SUM(distance_run), 0) AS "totalKm",
+        COALESCE(SUM(fuel_filled_liters), 0) AS "totalFuelLiters",
+        COALESCE(SUM(fuel_total_cost), 0) AS "totalFuelCost",
+        COALESCE(SUM(toll_amount + fastag_deduction), 0) AS "totalToll"
+      FROM tenant_fleet_daily_logs
+      GROUP BY project_name
+      ORDER BY "totalKm" DESC
+    `);
+        res.json({
+            summary: statsRes.rows[0],
+            projectRollup: projRes.rows
+        });
+    }
+    catch (err) {
+        console.error('[GET /api/tenant/fleet-logs/stats] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+// GET Fleet Daily Logs
+app.get(['/api/tenant/fleet-logs/:firebaseUid', '/api/tenant/fleet-logs'], async (req, res) => {
+    try {
+        const { projectId, assetNumber, stage, dateFrom, dateTo } = req.query;
+        let query = `
+      SELECT 
+        id,
+        tenant_id AS "tenantId",
+        asset_id AS "assetId",
+        asset_type AS "assetType",
+        asset_number AS "assetNumber",
+        asset_title AS "assetTitle",
+        assignment_id AS "assignmentId",
+        project_id AS "projectId",
+        project_name AS "projectName",
+        worksite_id AS "worksiteId",
+        worksite_name AS "worksiteName",
+        driver_id AS "driverId",
+        driver_name AS "driverName",
+        driver_phone AS "driverPhone",
+        helper_id AS "helperId",
+        helper_name AS "helperName",
+        helper_role AS "helperRole",
+        helper_phone AS "helperPhone",
+        TO_CHAR(log_date, 'YYYY-MM-DD') AS "logDate",
+        shift,
+        stage,
+        start_odometer AS "startOdometer",
+        end_odometer AS "endOdometer",
+        distance_run AS "distanceRun",
+        engine_hours_start AS "engineHoursStart",
+        engine_hours_end AS "engineHoursEnd",
+        engine_hours_total AS "engineHoursTotal",
+        fuel_filled_liters AS "fuelFilledLiters",
+        fuel_rate_per_liter AS "fuelRatePerLiter",
+        fuel_total_cost AS "fuelTotalCost",
+        fuel_station AS "fuelStation",
+        fuel_bill_number AS "fuelBillNumber",
+        fuel_efficiency AS "fuelEfficiency",
+        toll_amount AS "tollAmount",
+        fastag_deduction AS "fastagDeduction",
+        other_expenses AS "otherExpenses",
+        trips_count AS "tripsCount",
+        remarks,
+        created_at AS "createdAt",
+        updated_at AS "updatedAt"
+      FROM tenant_fleet_daily_logs
+      WHERE 1=1
+    `;
+        const params = [];
+        let pIdx = 1;
+        if (projectId && projectId !== 'All') {
+            query += ` AND project_name = ${pIdx++}`;
+            params.push(projectId);
+        }
+        if (assetNumber && assetNumber !== 'All') {
+            query += ` AND asset_number = ${pIdx++}`;
+            params.push(assetNumber);
+        }
+        if (stage && stage !== 'All') {
+            query += ` AND stage = ${pIdx++}`;
+            params.push(stage);
+        }
+        if (dateFrom) {
+            query += ` AND log_date >= ${pIdx++}`;
+            params.push(dateFrom);
+        }
+        if (dateTo) {
+            query += ` AND log_date <= ${pIdx++}`;
+            params.push(dateTo);
+        }
+        query += ` ORDER BY log_date DESC, id DESC`;
+        const result = await pool.query(query, params);
+        res.json(result.rows);
+    }
+    catch (err) {
+        console.error('[GET /api/tenant/fleet-logs] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+// POST Create Fleet Daily Log
+app.post('/api/tenant/fleet-logs', async (req, res) => {
+    try {
+        const b = req.body;
+        const startOdo = parseFloat(b.startOdometer) || 0;
+        const endOdo = parseFloat(b.endOdometer) || 0;
+        const distRun = b.distanceRun !== undefined ? parseFloat(b.distanceRun) : Math.max(0, endOdo - startOdo);
+        const engHoursStart = parseFloat(b.engineHoursStart) || 0;
+        const engHoursEnd = parseFloat(b.engineHoursEnd) || 0;
+        const engHoursTotal = b.engineHoursTotal !== undefined ? parseFloat(b.engineHoursTotal) : Math.max(0, engHoursEnd - engHoursStart);
+        const fuelLiters = parseFloat(b.fuelFilledLiters) || 0;
+        const fuelRate = parseFloat(b.fuelRatePerLiter) || 0;
+        const fuelCost = b.fuelTotalCost !== undefined ? parseFloat(b.fuelTotalCost) : (fuelLiters * fuelRate);
+        let efficiency = 0;
+        if (b.fuelEfficiency !== undefined && parseFloat(b.fuelEfficiency) > 0) {
+            efficiency = parseFloat(b.fuelEfficiency);
+        }
+        else if (b.assetType === 'equipment') {
+            efficiency = fuelLiters > 0 && engHoursTotal > 0 ? parseFloat((fuelLiters / engHoursTotal).toFixed(2)) : 0;
+        }
+        else {
+            efficiency = fuelLiters > 0 && distRun > 0 ? parseFloat((distRun / fuelLiters).toFixed(2)) : 0;
+        }
+        const insRes = await pool.query(`
+      INSERT INTO tenant_fleet_daily_logs (
+        tenant_id, asset_id, asset_type, asset_number, asset_title, assignment_id,
+        project_id, project_name, worksite_id, worksite_name,
+        driver_id, driver_name, driver_phone,
+        helper_id, helper_name, helper_role, helper_phone,
+        log_date, shift, stage,
+        start_odometer, end_odometer, distance_run,
+        engine_hours_start, engine_hours_end, engine_hours_total,
+        fuel_filled_liters, fuel_rate_per_liter, fuel_total_cost,
+        fuel_station, fuel_bill_number, fuel_efficiency,
+        toll_amount, fastag_deduction, other_expenses,
+        trips_count, remarks
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6,
+        $7, $8, $9, $10,
+        $11, $12, $13,
+        $14, $15, $16, $17,
+        $18, $19, $20,
+        $21, $22, $23,
+        $24, $25, $26,
+        $27, $28, $29,
+        $30, $31, $32,
+        $33, $34, $35,
+        $36, $37
+      ) RETURNING *;
+    `, [
+            b.tenantId || 'demo-tenant', b.assetId || null, b.assetType || 'vehicle', b.assetNumber, b.assetTitle || null, b.assignmentId || null,
+            b.projectId || null, b.projectName || null, b.worksiteId || null, b.worksiteName || null,
+            b.driverId || null, b.driverName || null, b.driverPhone || null,
+            b.helperId || null, b.helperName || null, b.helperRole || null, b.helperPhone || null,
+            b.logDate || new Date().toISOString().split('T')[0], b.shift || 'Day', b.stage || 'Working',
+            startOdo, endOdo, distRun,
+            engHoursStart, engHoursEnd, engHoursTotal,
+            fuelLiters, fuelRate, fuelCost,
+            b.fuelStation || null, b.fuelBillNumber || null, efficiency,
+            parseFloat(b.tollAmount) || 0, parseFloat(b.fastagDeduction) || 0, parseFloat(b.otherExpenses) || 0,
+            parseInt(b.tripsCount, 10) || 1, b.remarks || null
+        ]);
+        // Also update assignment status/odometer if assignmentId is present
+        if (b.assignmentId && (endOdo > 0 || engHoursEnd > 0)) {
+            const closingVal = b.assetType === 'equipment' && engHoursEnd > 0 ? engHoursEnd : endOdo;
+            const progressVal = b.assetType === 'equipment' && engHoursTotal > 0 ? engHoursTotal : distRun;
+            await pool.query(`
+        UPDATE tenant_vehicle_assignments
+        SET odometer_closing_km = $1, distance_travelled = COALESCE(distance_travelled, 0) + $2, updated_at = NOW()
+        WHERE id = $3;
+      `, [closingVal, progressVal, b.assignmentId]);
+        }
+        res.status(201).json(insRes.rows[0]);
+    }
+    catch (err) {
+        console.error('[POST /api/tenant/fleet-logs] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+// DELETE Fleet Daily Log
+app.delete('/api/tenant/fleet-logs/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const delRes = await pool.query('DELETE FROM tenant_fleet_daily_logs WHERE id = $1 RETURNING *', [id]);
+        if (delRes.rows.length === 0) {
+            return res.status(404).json({ error: 'Log not found' });
+        }
+        res.json({ message: 'Fleet log deleted', log: delRes.rows[0] });
+    }
+    catch (err) {
+        console.error('[DELETE /api/tenant/fleet-logs/:id] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+// GET Driver Context & My Assigned Vehicles for FMS Employee Portal
+app.get(['/api/tenant/fms-employee/driver-portal/:firebaseUid', '/api/tenant/fms-employee/driver-portal'], async (req, res) => {
+    const firebaseUid = req.params.firebaseUid || req.query.firebaseUid || req.query.uid;
+    const { driverPhone, driverName } = req.query;
+    try {
+        let tenantId = null;
+        let employeeProfile = null;
+        if (firebaseUid) {
+            const adminRes = await pool.query('SELECT tenant_id, admin_name, mobile, email, designation FROM tenant_admins WHERE firebase_uid = $1', [firebaseUid]);
+            if (adminRes.rows.length > 0) {
+                tenantId = adminRes.rows[0].tenant_id;
+                employeeProfile = {
+                    name: adminRes.rows[0].admin_name,
+                    mobile: adminRes.rows[0].mobile,
+                    email: adminRes.rows[0].email,
+                    role: adminRes.rows[0].designation || 'Admin',
+                    department: 'Management',
+                    isAdmin: true
+                };
+            }
+            else {
+                const userRes = await pool.query('SELECT tenant_id, name, mobile, email, role, department, member_id FROM tenant_users WHERE firebase_uid = $1', [firebaseUid]);
+                if (userRes.rows.length > 0) {
+                    tenantId = userRes.rows[0].tenant_id;
+                    employeeProfile = {
+                        name: userRes.rows[0].name,
+                        mobile: userRes.rows[0].mobile,
+                        email: userRes.rows[0].email,
+                        role: userRes.rows[0].role,
+                        department: userRes.rows[0].department,
+                        memberId: userRes.rows[0].member_id,
+                        isAdmin: false
+                    };
+                }
+            }
+        }
+        if (!tenantId) {
+            const firstTenant = await pool.query('SELECT tenant_id FROM tenant_admins ORDER BY id ASC LIMIT 1');
+            if (firstTenant.rows.length > 0)
+                tenantId = firstTenant.rows[0].tenant_id;
+        }
+        if (!tenantId)
+            tenantId = '1';
+        // Fetch all drivers/operators in this tenant (for switcher or matching)
+        const driversListRes = await pool.query(`
+      SELECT id, name, mobile, role, department, member_id as "memberId"
+      FROM tenant_users
+      WHERE tenant_id = $1
+        AND (
+          LOWER(department) LIKE '%fms%' OR 
+          LOWER(department) LIKE '%fleet%' OR 
+          LOWER(department) LIKE '%operat%' OR 
+          LOWER(role) LIKE '%driver%' OR 
+          LOWER(role) LIKE '%operator%' OR 
+          LOWER(role) LIKE '%pilot%'
+        )
+      ORDER BY name ASC
+    `, [tenantId]);
+        // Target phone/name
+        const targetPhone = driverPhone || employeeProfile?.mobile || '';
+        const targetName = driverName || employeeProfile?.name || '';
+        const cleanPhone = String(targetPhone).replace(/\D/g, '');
+        let assignmentQuery = `
+      SELECT 
+        a.id,
+        a.tenant_id as "tenantId",
+        a.asset_type as "assetType",
+        a.asset_id as "assetId",
+        a.asset_number as "assetNumber",
+        a.asset_title as "assetTitle",
+        a.project_id as "projectId",
+        a.project_name as "projectName",
+        a.worksite_id as "worksiteId",
+        a.worksite_name as "worksiteName",
+        a.assigned_to_type as "assignedToType",
+        a.assigned_to_name as "assignedToName",
+        a.assigned_to_phone as "assignedToPhone",
+        a.helper_name as "helperName",
+        a.helper_phone as "helperPhone",
+        a.helper_role as "helperRole",
+        a.start_date as "startDate",
+        a.meter_reading_at_assign as "meterReadingAtAssign",
+        a.odometer_closing_km as "odometerClosingKm",
+        a.distance_travelled as "distanceTravelled",
+        a.status,
+        a.notes
+      FROM tenant_vehicle_assignments a
+      WHERE a.tenant_id = $1
+    `;
+        const assignParams = [tenantId];
+        if (cleanPhone || targetName) {
+            assignParams.push(`%${cleanPhone || targetName}%`);
+            assignmentQuery += ` AND (
+        a.assigned_to_phone LIKE $${assignParams.length} OR 
+        LOWER(a.assigned_to_name) LIKE LOWER($${assignParams.length}) OR 
+        a.helper_phone LIKE $${assignParams.length} OR 
+        LOWER(a.helper_name) LIKE LOWER($${assignParams.length})
+      )`;
+        }
+        assignmentQuery += ` ORDER BY a.status ASC, a.id DESC`;
+        const assignmentsRes = await pool.query(assignmentQuery, assignParams);
+        // Fetch shift logs for this driver
+        let logsQuery = `
+      SELECT 
+        id, asset_number as "assetNumber", asset_title as "assetTitle", asset_type as "assetType",
+        assignment_id as "assignmentId", project_name as "projectName", worksite_name as "worksiteName",
+        driver_name as "driverName", driver_phone as "driverPhone",
+        log_date as "logDate", shift, stage,
+        start_odometer as "startOdometer", end_odometer as "endOdometer", distance_run as "distanceRun",
+        engine_hours_start as "engineHoursStart", engine_hours_end as "engineHoursEnd", engine_hours_total as "engineHoursTotal",
+        fuel_filled_liters as "fuelFilledLiters", fuel_rate_per_liter as "fuelRatePerLiter", fuel_total_cost as "fuelTotalCost",
+        fuel_station as "fuelStation", fuel_bill_number as "fuelBillNumber", fuel_efficiency as "fuelEfficiency",
+        toll_amount as "tollAmount", fastag_deduction as "fastagDeduction", other_expenses as "otherExpenses",
+        trips_count as "tripsCount", remarks, created_at as "createdAt"
+      FROM tenant_fleet_daily_logs
+      WHERE tenant_id = $1
+    `;
+        const logsParams = [tenantId];
+        if (cleanPhone || targetName) {
+            logsParams.push(`%${cleanPhone || targetName}%`);
+            logsQuery += ` AND (
+        driver_phone LIKE $${logsParams.length} OR 
+        LOWER(driver_name) LIKE LOWER($${logsParams.length})
+      )`;
+        }
+        logsQuery += ` ORDER BY log_date DESC, id DESC LIMIT 50`;
+        const logsRes = await pool.query(logsQuery, logsParams);
+        res.json({
+            profile: employeeProfile,
+            driversList: driversListRes.rows,
+            myAssignments: assignmentsRes.rows,
+            myLogs: logsRes.rows
+        });
+    }
+    catch (err) {
+        console.error('[GET /api/tenant/fms-employee/driver-portal] Error:', err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -6235,6 +7175,50 @@ app.listen(Number(port), '0.0.0.0', async () => {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
+  `);
+    await pool.query(`
+    CREATE TABLE IF NOT EXISTS tenant_vehicle_assignments (
+      id SERIAL PRIMARY KEY,
+      tenant_id VARCHAR(100) NOT NULL,
+      asset_type VARCHAR(50) NOT NULL DEFAULT 'vehicle',
+      asset_id VARCHAR(100) NOT NULL,
+      asset_number VARCHAR(100) NOT NULL,
+      asset_title VARCHAR(255),
+      project_id VARCHAR(100),
+      project_name VARCHAR(255),
+      worksite_id VARCHAR(100),
+      worksite_name VARCHAR(255),
+      assigned_to_type VARCHAR(50) DEFAULT 'driver',
+      assigned_to_name VARCHAR(255),
+      assigned_to_phone VARCHAR(50),
+      start_date VARCHAR(50),
+      expected_end_date VARCHAR(50),
+      actual_end_date VARCHAR(50),
+      meter_reading_at_assign NUMERIC(15,2) DEFAULT 0,
+      meter_reading_at_release NUMERIC(15,2),
+      status VARCHAR(50) DEFAULT 'Active',
+      notes TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+    await pool.query(`
+    ALTER TABLE tenant_vehicles ADD COLUMN IF NOT EXISTS fuel_power_type VARCHAR(100); 
+    ALTER TABLE tenant_vehicles ADD COLUMN IF NOT EXISTS fuel_consumption VARCHAR(100); 
+    ALTER TABLE tenant_vehicles ADD COLUMN IF NOT EXISTS insurance_start_date VARCHAR(50);
+    ALTER TABLE tenant_vehicles ADD COLUMN IF NOT EXISTS insurance_expiry_date VARCHAR(50);
+    ALTER TABLE tenant_vehicles ADD COLUMN IF NOT EXISTS insurance_cost NUMERIC(15,2) DEFAULT 0;
+    ALTER TABLE tenant_vehicles ADD COLUMN IF NOT EXISTS insurance_duration VARCHAR(50);
+    ALTER TABLE tenant_vehicles ADD COLUMN IF NOT EXISTS insurance_policy_number VARCHAR(100);
+    ALTER TABLE tenant_heavy_equipment ADD COLUMN IF NOT EXISTS fuel_power_type VARCHAR(100); 
+    ALTER TABLE tenant_heavy_equipment ADD COLUMN IF NOT EXISTS fuel_consumption VARCHAR(100);
+    ALTER TABLE tenant_heavy_equipment ADD COLUMN IF NOT EXISTS insurance_start_date VARCHAR(50);
+    ALTER TABLE tenant_heavy_equipment ADD COLUMN IF NOT EXISTS insurance_expiry_date VARCHAR(50);
+    ALTER TABLE tenant_heavy_equipment ADD COLUMN IF NOT EXISTS insurance_cost NUMERIC(15,2) DEFAULT 0;
+    ALTER TABLE tenant_heavy_equipment ADD COLUMN IF NOT EXISTS insurance_duration VARCHAR(50);
+    ALTER TABLE tenant_heavy_equipment ADD COLUMN IF NOT EXISTS insurance_policy_number VARCHAR(100);
+    ALTER TABLE tenant_vehicles ADD COLUMN IF NOT EXISTS insurance_history JSONB DEFAULT '[]'::jsonb;
+    ALTER TABLE tenant_heavy_equipment ADD COLUMN IF NOT EXISTS insurance_history JSONB DEFAULT '[]'::jsonb;
   `);
     console.log('✅ Auto-created/verified tenant_vehicles & tenant_heavy_equipment tables on server startup');
     try {
