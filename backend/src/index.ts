@@ -3907,7 +3907,34 @@ app.post('/api/tenant/vehicles', async (req, res) => {
       ]
     );
 
-    res.status(201).json(insertRes.rows[0]);
+    const createdVehicle = insertRes.rows[0];
+    if (assignedDriverName && assignedDriverName.trim()) {
+      try {
+        const vTitle = [createdVehicle.make, createdVehicle.model].filter(Boolean).join(' ') || createdVehicle.vehicleType || 'Truck / Vehicle';
+        await pool.query(
+          `INSERT INTO tenant_vehicle_assignments (
+             tenant_id, asset_type, asset_id, asset_number, asset_title,
+             assigned_to_type, assigned_to_name, assigned_to_phone,
+             project_id, project_name, status, start_date
+           ) VALUES ($1, 'vehicle', $2, $3, $4, 'driver', $5, $6, $7, $8, 'Active', $9)`,
+          [
+            tenantId,
+            String(createdVehicle.id),
+            createdVehicle.vehicleNumber,
+            vTitle,
+            assignedDriverName.trim(),
+            assignedDriverPhone?.trim() || null,
+            createdVehicle.assignedProjectId || null,
+            createdVehicle.assignedProjectName || null,
+            new Date().toISOString().split('T')[0]
+          ]
+        );
+      } catch (assignErr: any) {
+        console.warn('Notice syncing vehicle assignment:', assignErr.message);
+      }
+    }
+
+    res.status(201).json(createdVehicle);
   } catch (err: any) {
     console.error(`[POST /api/tenant/vehicles] Error:`, err);
     res.status(500).json({ error: err.message });
@@ -4062,7 +4089,67 @@ app.put('/api/tenant/vehicles/:id', async (req, res) => {
     if (updateRes.rows.length === 0) {
       return res.status(404).json({ error: 'Vehicle not found' });
     }
-    res.json(updateRes.rows[0]);
+    const updatedVehicle = updateRes.rows[0];
+    const tenantId = updatedVehicle.tenantId || '1';
+
+    try {
+      if (assignedDriverName && assignedDriverName.trim()) {
+        const vTitle = [updatedVehicle.make, updatedVehicle.model].filter(Boolean).join(' ') || updatedVehicle.vehicleType || 'Truck / Vehicle';
+        const existingAssign = await pool.query(
+          `SELECT id FROM tenant_vehicle_assignments 
+           WHERE tenant_id = $1 AND asset_id = $2 AND asset_type = 'vehicle' AND status = 'Active'`,
+          [tenantId, String(id)]
+        );
+
+        if (existingAssign.rows.length > 0) {
+          await pool.query(
+            `UPDATE tenant_vehicle_assignments
+             SET assigned_to_name = $1, assigned_to_phone = $2, asset_number = $3, asset_title = $4,
+                 project_id = $5, project_name = $6, updated_at = NOW()
+             WHERE id = $7`,
+            [
+              assignedDriverName.trim(),
+              assignedDriverPhone?.trim() || null,
+              updatedVehicle.vehicleNumber,
+              vTitle,
+              updatedVehicle.assignedProjectId || null,
+              updatedVehicle.assignedProjectName || null,
+              existingAssign.rows[0].id
+            ]
+          );
+        } else {
+          await pool.query(
+            `INSERT INTO tenant_vehicle_assignments (
+               tenant_id, asset_type, asset_id, asset_number, asset_title,
+               assigned_to_type, assigned_to_name, assigned_to_phone,
+               project_id, project_name, status, start_date
+             ) VALUES ($1, 'vehicle', $2, $3, $4, 'driver', $5, $6, $7, $8, 'Active', $9)`,
+            [
+              tenantId,
+              String(id),
+              updatedVehicle.vehicleNumber,
+              vTitle,
+              assignedDriverName.trim(),
+              assignedDriverPhone?.trim() || null,
+              updatedVehicle.assignedProjectId || null,
+              updatedVehicle.assignedProjectName || null,
+              new Date().toISOString().split('T')[0]
+            ]
+          );
+        }
+      } else if (assignedDriverName === '' || assignedDriverName === null) {
+        await pool.query(
+          `UPDATE tenant_vehicle_assignments
+           SET status = 'Released', actual_end_date = $1, updated_at = NOW()
+           WHERE tenant_id = $2 AND asset_id = $3 AND asset_type = 'vehicle' AND status = 'Active'`,
+          [new Date().toISOString().split('T')[0], tenantId, String(id)]
+        );
+      }
+    } catch (assignErr: any) {
+      console.warn('Notice syncing updated vehicle assignment:', assignErr.message);
+    }
+
+    res.json(updatedVehicle);
   } catch (err: any) {
     console.error(`[PUT /api/tenant/vehicles/:id] Error:`, err);
     res.status(500).json({ error: err.message });
@@ -4317,7 +4404,35 @@ app.post('/api/tenant/heavy-equipment', async (req, res) => {
       ]
     );
 
-    res.status(201).json(insertRes.rows[0]);
+    const createdEq = insertRes.rows[0];
+    if (assignedOperatorName && assignedOperatorName.trim()) {
+      try {
+        const eqTitle = [createdEq.equipmentType, createdEq.equipmentId].filter(Boolean).join(' ') || 'Heavy Equipment';
+        await pool.query(
+          `INSERT INTO tenant_vehicle_assignments (
+             tenant_id, asset_type, asset_id, asset_number, asset_title,
+             assigned_to_type, assigned_to_name, assigned_to_phone,
+             project_id, project_name, worksite_name, status, start_date
+           ) VALUES ($1, 'equipment', $2, $3, $4, 'operator', $5, $6, $7, $8, $9, 'Active', $10)`,
+          [
+            tenantId,
+            String(createdEq.id),
+            createdEq.equipmentNumber,
+            eqTitle,
+            assignedOperatorName.trim(),
+            assignedOperatorPhone?.trim() || null,
+            createdEq.assignedProjectId || null,
+            createdEq.assignedProjectName || null,
+            createdEq.assignedWorksiteName || null,
+            new Date().toISOString().split('T')[0]
+          ]
+        );
+      } catch (assignErr: any) {
+        console.warn('Notice syncing equipment assignment:', assignErr.message);
+      }
+    }
+
+    res.status(201).json(createdEq);
   } catch (err: any) {
     console.error(`[POST /api/tenant/heavy-equipment] Error:`, err);
     res.status(500).json({ error: err.message });
@@ -4484,7 +4599,69 @@ app.put('/api/tenant/heavy-equipment/:id', async (req, res) => {
     if (updateRes.rows.length === 0) {
       return res.status(404).json({ error: 'Heavy equipment not found' });
     }
-    res.json(updateRes.rows[0]);
+    const updatedEq = updateRes.rows[0];
+    const tenantId = updatedEq.tenantId || '1';
+
+    try {
+      if (assignedOperatorName && assignedOperatorName.trim()) {
+        const eqTitle = [updatedEq.equipmentType, updatedEq.equipmentId].filter(Boolean).join(' ') || 'Heavy Equipment';
+        const existingAssign = await pool.query(
+          `SELECT id FROM tenant_vehicle_assignments 
+           WHERE tenant_id = $1 AND asset_id = $2 AND asset_type = 'equipment' AND status = 'Active'`,
+          [tenantId, String(id)]
+        );
+
+        if (existingAssign.rows.length > 0) {
+          await pool.query(
+            `UPDATE tenant_vehicle_assignments
+             SET assigned_to_name = $1, assigned_to_phone = $2, asset_number = $3, asset_title = $4,
+                 project_id = $5, project_name = $6, worksite_name = $7, updated_at = NOW()
+             WHERE id = $8`,
+            [
+              assignedOperatorName.trim(),
+              assignedOperatorPhone?.trim() || null,
+              updatedEq.equipmentNumber,
+              eqTitle,
+              updatedEq.assignedProjectId || null,
+              updatedEq.assignedProjectName || null,
+              updatedEq.assignedWorksiteName || null,
+              existingAssign.rows[0].id
+            ]
+          );
+        } else {
+          await pool.query(
+            `INSERT INTO tenant_vehicle_assignments (
+               tenant_id, asset_type, asset_id, asset_number, asset_title,
+               assigned_to_type, assigned_to_name, assigned_to_phone,
+               project_id, project_name, worksite_name, status, start_date
+             ) VALUES ($1, 'equipment', $2, $3, $4, 'operator', $5, $6, $7, $8, $9, 'Active', $10)`,
+            [
+              tenantId,
+              String(id),
+              updatedEq.equipmentNumber,
+              eqTitle,
+              assignedOperatorName.trim(),
+              assignedOperatorPhone?.trim() || null,
+              updatedEq.assignedProjectId || null,
+              updatedEq.assignedProjectName || null,
+              updatedEq.assignedWorksiteName || null,
+              new Date().toISOString().split('T')[0]
+            ]
+          );
+        }
+      } else if (assignedOperatorName === '' || assignedOperatorName === null) {
+        await pool.query(
+          `UPDATE tenant_vehicle_assignments
+           SET status = 'Released', actual_end_date = $1, updated_at = NOW()
+           WHERE tenant_id = $2 AND asset_id = $3 AND asset_type = 'equipment' AND status = 'Active'`,
+          [new Date().toISOString().split('T')[0], tenantId, String(id)]
+        );
+      }
+    } catch (assignErr: any) {
+      console.warn('Notice syncing updated equipment assignment:', assignErr.message);
+    }
+
+    res.json(updatedEq);
   } catch (err: any) {
     console.error(`[PUT /api/tenant/heavy-equipment/:id] Error:`, err);
     res.status(500).json({ error: err.message });
@@ -5289,6 +5466,24 @@ app.post('/api/tenant/fleet-logs', async (req, res) => {
       `, [closingVal, progressVal, b.assignmentId]);
     }
 
+    if (b.assetType === 'equipment' && engHoursEnd > 0) {
+      try {
+        await pool.query(`
+          UPDATE tenant_heavy_equipment
+          SET hour_meter_reading = $1, updated_at = NOW()
+          WHERE equipment_number = $2 OR id::text = $3;
+        `, [engHoursEnd, b.assetNumber, String(b.assetId || '')]);
+      } catch (e: any) { }
+    } else if (b.assetType === 'vehicle' && b.worksiteName) {
+      try {
+        await pool.query(`
+          UPDATE tenant_vehicles
+          SET current_location = $1, updated_at = NOW()
+          WHERE vehicle_number = $2 OR id::text = $3;
+        `, [b.worksiteName, b.assetNumber, String(b.assetId || '')]);
+      } catch (e: any) { }
+    }
+
     res.status(201).json(insRes.rows[0]);
   } catch (err: any) {
     console.error('[POST /api/tenant/fleet-logs] Error:', err);
@@ -5370,10 +5565,25 @@ app.get(['/api/tenant/fms-employee/driver-portal/:firebaseUid', '/api/tenant/fms
       ORDER BY name ASC
     `, [tenantId]);
 
-    // Target phone/name
-    const targetPhone = driverPhone || employeeProfile?.mobile || '';
-    const targetName = driverName || employeeProfile?.name || '';
-    const cleanPhone = String(targetPhone).replace(/\D/g, '');
+    let driversList = driversListRes.rows;
+    if (driversList.length === 0) {
+      const allUsersRes = await pool.query(`
+        SELECT id, name, mobile, role, department, member_id as "memberId"
+        FROM tenant_users
+        WHERE tenant_id = $1 AND COALESCE(status, 'Active') != 'Deactivated'
+        ORDER BY name ASC
+      `, [tenantId]);
+      driversList = allUsersRes.rows;
+    }
+
+    // Target phone/name: If user is Admin and didn't specify a driver filter, show all tenant assignments
+    let targetPhone = driverPhone ? String(driverPhone) : '';
+    let targetName = driverName ? String(driverName) : '';
+    if (!targetPhone && !targetName && !employeeProfile?.isAdmin) {
+      targetPhone = employeeProfile?.mobile || '';
+      targetName = employeeProfile?.name || '';
+    }
+    const cleanPhone = String(targetPhone).replace(/^\+?91/, '').replace(/\D/g, '');
 
     let assignmentQuery = `
       SELECT 
@@ -5398,8 +5608,14 @@ app.get(['/api/tenant/fms-employee/driver-portal/:firebaseUid', '/api/tenant/fms
         a.odometer_closing_km as "odometerClosingKm",
         a.distance_travelled as "distanceTravelled",
         a.status,
-        a.notes
+        a.notes,
+        COALESCE(v.fuel_power_type, eq.fuel_power_type, 'Diesel') as "fuelPowerType",
+        COALESCE(v.fuel_consumption, eq.fuel_consumption, '') as "fuelConsumptionBenchmark",
+        COALESCE(v.vehicle_type, eq.equipment_type, '') as "categoryType",
+        COALESCE(v.current_location, eq.assigned_worksite_name, a.worksite_name, '') as "currentLocation"
       FROM tenant_vehicle_assignments a
+      LEFT JOIN tenant_vehicles v ON a.asset_type = 'vehicle' AND (a.asset_id = v.id::text OR a.asset_number = v.vehicle_number)
+      LEFT JOIN tenant_heavy_equipment eq ON a.asset_type = 'equipment' AND (a.asset_id = eq.id::text OR a.asset_number = eq.equipment_number)
       WHERE a.tenant_id = $1
     `;
     const assignParams: any[] = [tenantId];
@@ -5407,8 +5623,10 @@ app.get(['/api/tenant/fms-employee/driver-portal/:firebaseUid', '/api/tenant/fms
     if (cleanPhone || targetName) {
       assignParams.push(`%${cleanPhone || targetName}%`);
       assignmentQuery += ` AND (
+        REGEXP_REPLACE(COALESCE(a.assigned_to_phone, ''), '\\D', '', 'g') LIKE $${assignParams.length} OR 
         a.assigned_to_phone LIKE $${assignParams.length} OR 
         LOWER(a.assigned_to_name) LIKE LOWER($${assignParams.length}) OR 
+        REGEXP_REPLACE(COALESCE(a.helper_phone, ''), '\\D', '', 'g') LIKE $${assignParams.length} OR 
         a.helper_phone LIKE $${assignParams.length} OR 
         LOWER(a.helper_name) LIKE LOWER($${assignParams.length})
       )`;
@@ -5417,6 +5635,68 @@ app.get(['/api/tenant/fms-employee/driver-portal/:firebaseUid', '/api/tenant/fms
     assignmentQuery += ` ORDER BY a.status ASC, a.id DESC`;
     const assignmentsRes = await pool.query(assignmentQuery, assignParams);
 
+    const assignmentsMap = new Map();
+    for (const row of assignmentsRes.rows) {
+      assignmentsMap.set(row.assetNumber, row);
+    }
+
+    try {
+      const directVehicles = await pool.query(`
+        SELECT 
+          id, tenant_id as "tenantId", 'vehicle' as "assetType", id::text as "assetId",
+          vehicle_number as "assetNumber", COALESCE(make || ' ' || model, vehicle_type, 'Truck') as "assetTitle",
+          assigned_project_id as "projectId", assigned_project_name as "projectName",
+          current_location as "worksiteName", 'driver' as "assignedToType",
+          COALESCE(assigned_driver_name, 'Unassigned') as "assignedToName", 
+          assigned_driver_phone as "assignedToPhone",
+          fuel_power_type as "fuelPowerType", fuel_consumption as "fuelConsumptionBenchmark", vehicle_type as "categoryType",
+          current_location as "currentLocation",
+          COALESCE(status, 'Active') as status
+        FROM tenant_vehicles
+        WHERE tenant_id = $1
+      `, [tenantId]);
+
+      for (const v of directVehicles.rows) {
+        const vPhoneClean = String(v.assignedToPhone || '').replace(/\D/g, '');
+        const match = !cleanPhone && !targetName ? true : (
+          (cleanPhone && vPhoneClean.includes(cleanPhone)) ||
+          (targetName && v.assignedToName && v.assignedToName.toLowerCase().includes(String(targetName).toLowerCase()))
+        );
+        if (match && !assignmentsMap.has(v.assetNumber)) {
+          assignmentsMap.set(v.assetNumber, v);
+        }
+      }
+    } catch (e: any) { }
+
+    try {
+      const directEquipment = await pool.query(`
+        SELECT 
+          id, tenant_id as "tenantId", 'equipment' as "assetType", id::text as "assetId",
+          equipment_number as "assetNumber", COALESCE(equipment_type || ' ' || equipment_id, 'Heavy Equipment') as "assetTitle",
+          assigned_project_id as "projectId", assigned_project_name as "projectName",
+          assigned_worksite_name as "worksiteName", 'operator' as "assignedToType",
+          COALESCE(assigned_operator_name, 'Unassigned') as "assignedToName", 
+          assigned_operator_phone as "assignedToPhone",
+          hour_meter_reading as "meterReadingAtAssign",
+          fuel_power_type as "fuelPowerType", fuel_consumption as "fuelConsumptionBenchmark", equipment_type as "categoryType",
+          assigned_worksite_name as "currentLocation",
+          COALESCE(status, 'Active') as status
+        FROM tenant_heavy_equipment
+        WHERE tenant_id = $1
+      `, [tenantId]);
+
+      for (const eq of directEquipment.rows) {
+        const eqPhoneClean = String(eq.assignedToPhone || '').replace(/\D/g, '');
+        const match = !cleanPhone && !targetName ? true : (
+          (cleanPhone && eqPhoneClean.includes(cleanPhone)) ||
+          (targetName && eq.assignedToName && eq.assignedToName.toLowerCase().includes(String(targetName).toLowerCase()))
+        );
+        if (match && !assignmentsMap.has(eq.assetNumber)) {
+          assignmentsMap.set(eq.assetNumber, eq);
+        }
+      }
+    } catch (e: any) { }
+    const finalAssignments = Array.from(assignmentsMap.values());
     // Fetch shift logs for this driver
     let logsQuery = `
       SELECT 
@@ -5437,17 +5717,17 @@ app.get(['/api/tenant/fms-employee/driver-portal/:firebaseUid', '/api/tenant/fms
     if (cleanPhone || targetName) {
       logsParams.push(`%${cleanPhone || targetName}%`);
       logsQuery += ` AND (
+        REGEXP_REPLACE(COALESCE(driver_phone, ''), '\\D', '', 'g') LIKE $${logsParams.length} OR 
         driver_phone LIKE $${logsParams.length} OR 
         LOWER(driver_name) LIKE LOWER($${logsParams.length})
       )`;
     }
     logsQuery += ` ORDER BY log_date DESC, id DESC LIMIT 50`;
     const logsRes = await pool.query(logsQuery, logsParams);
-
     res.json({
       profile: employeeProfile,
-      driversList: driversListRes.rows,
-      myAssignments: assignmentsRes.rows,
+      driversList: driversList,
+      myAssignments: finalAssignments,
       myLogs: logsRes.rows
     });
   } catch (err: any) {
@@ -8332,6 +8612,12 @@ app.listen(Number(port), '0.0.0.0', async () => {
     ALTER TABLE tenant_heavy_equipment ADD COLUMN IF NOT EXISTS insurance_policy_number VARCHAR(100);
     ALTER TABLE tenant_vehicles ADD COLUMN IF NOT EXISTS insurance_history JSONB DEFAULT '[]'::jsonb;
     ALTER TABLE tenant_heavy_equipment ADD COLUMN IF NOT EXISTS insurance_history JSONB DEFAULT '[]'::jsonb;
+    ALTER TABLE tenant_vehicle_assignments ADD COLUMN IF NOT EXISTS odometer_closing_km NUMERIC(15,2) DEFAULT 0;
+    ALTER TABLE tenant_vehicle_assignments ADD COLUMN IF NOT EXISTS distance_travelled NUMERIC(15,2) DEFAULT 0;
+    ALTER TABLE tenant_vehicle_assignments ADD COLUMN IF NOT EXISTS helper_name VARCHAR(255);
+    ALTER TABLE tenant_vehicle_assignments ADD COLUMN IF NOT EXISTS helper_phone VARCHAR(50);
+    ALTER TABLE tenant_vehicle_assignments ADD COLUMN IF NOT EXISTS helper_role VARCHAR(100);
+    ALTER TABLE tenant_vehicle_assignments ADD COLUMN IF NOT EXISTS helper_id VARCHAR(100);
   `);
   console.log('✅ Auto-created/verified tenant_vehicles & tenant_heavy_equipment tables on server startup');
   try {

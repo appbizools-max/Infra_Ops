@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { Home, Users, Building2, Box, Wrench, UserCheck, Briefcase, Network, Wallet, User, Settings, Search, Bell, Menu, X, LogOut, ChevronRight, ChevronLeft, MapPin, Shield, UserCog, Layers, DollarSign, ShoppingCart, Clipboard, ClipboardList, TrendingUp, Clock, Plus, FolderPlus, Truck, Gauge } from 'lucide-react';
 import sideIconImg from '../../assets/Side Icon.png';
@@ -21,6 +21,8 @@ export default function TenantLayout() {
   const [userDesignation, setUserDesignation] = useState<string | null>(null);
   const [selectedProject, setSelectedProject] = useState('project-1');
   const [openMenus, setOpenMenus] = useState<{ [key: string]: boolean }>({});
+  const sidebarNavRef = useRef<HTMLDivElement>(null);
+  const mainContentRef = useRef<HTMLElement>(null);
 
   const toggleMenu = (name: string) => {
     setOpenMenus(prev => ({ ...prev, [name]: !prev[name] }));
@@ -172,7 +174,7 @@ export default function TenantLayout() {
       icon: Truck,
       isCollapsible: true,
       subItems: [
-        { name: 'Fleet Hub & Deployments', path: '/tenant/vehicle-master', icon: Layers },
+        { name: 'Fleet Hub (Trucks & Machinery)', path: '/tenant/vehicle-master', icon: Layers },
         { name: 'Fuel, Trips & Running Logs', path: '/tenant/fleet-operations', icon: Gauge },
         { name: 'FMS Employees Portal', path: '/tenant/fms-employee', icon: UserCheck },
       ]
@@ -182,87 +184,42 @@ export default function TenantLayout() {
     { name: 'Profile', path: '/tenant/profile', icon: User },
     { name: 'Settings', path: '/tenant/settings', icon: Settings },
   ];
-  const CollapsibleNavItem = ({ item }: { item: any }) => {
-    const isSubActive = item.subItems.some((sub: any) => isPathActive(sub.path));
-    const Icon = item.icon;
-    const isOpen = openMenus[item.name] ?? isSubActive;
-    return (
-      <div className="space-y-0.5">
-        <button
-          type="button"
-          onClick={() => toggleMenu(item.name)}
-          className={`w-full group flex items-center justify-between py-2.5 rounded-lg transition-all duration-150 relative ${isSubActive ? 'bg-white/10 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'
-            } ${isCollapsed ? 'justify-center px-0' : 'px-3'}`}
-          title={isCollapsed ? item.name : undefined}
-        >
-          {isSubActive && <span className="absolute left-0 inset-y-2 w-0.5 bg-[#46B351] rounded-r-full" />}
-          <div className={`flex items-center min-w-0 ${isCollapsed ? 'justify-center' : 'space-x-3'}`}>
-            <Icon size={isCollapsed ? 20 : 16} className={isSubActive ? 'text-[#46B351] shrink-0' : 'text-slate-500 group-hover:text-slate-300 shrink-0 transition-colors'} />
-            {!isCollapsed && (
-              <span className={`text-[13px] truncate ${isSubActive ? 'font-semibold text-white' : 'font-medium'}`}>
-                {item.name}
-              </span>
-            )}
-          </div>
-          {!isCollapsed && (
-            <ChevronRight
-              size={12}
-              className={`text-slate-500 transition-transform duration-150 ${isOpen ? 'rotate-90 text-[#46B351]' : ''}`}
-            />
-          )}
-        </button>
-
-        {isOpen && !isCollapsed && (
-          <div className="pl-6 space-y-0.5 transition-all duration-150">
-            {item.subItems.map((sub: any) => {
-              const isSubItemActive = isPathActive(sub.path);
-              const SubIcon = sub.icon;
-              return (
-                <Link
-                  key={sub.name}
-                  to={sub.path}
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className={`group flex items-center py-2 px-3 rounded-md transition-all duration-150 ${isSubItemActive ? 'text-white bg-white/5 font-semibold' : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
-                    }`}
-                >
-                  <SubIcon size={12} className={`mr-2.5 ${isSubItemActive ? 'text-[#46B351]' : 'text-slate-600 group-hover:text-slate-400'}`} />
-                  <span className="text-xs">{sub.name}</span>
-                </Link>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    );
+  const handleSidebarScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    sessionStorage.setItem('sidebar_scroll_top', String(e.currentTarget.scrollTop));
   };
 
-  const NavLink = ({ item }: { item: any }) => {
-    if (item.isCollapsible) {
-      return <CollapsibleNavItem item={item} />;
+  const handleNavClick = () => {
+    setIsMobileMenuOpen(false);
+    if (sidebarNavRef.current) {
+      sessionStorage.setItem('sidebar_scroll_top', String(sidebarNavRef.current.scrollTop));
     }
-    const isActive = location.pathname === item.path || (item.path === '/tenant/dashboard' && location.pathname === '/tenant');
-    const Icon = item.icon;
-    return (
-      <Link
-        to={item.path}
-        onClick={() => setIsMobileMenuOpen(false)}
-        className={`group flex items-center justify-between py-2.5 rounded-lg transition-all duration-150 relative ${isActive ? 'bg-white/10 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'
-          } ${isCollapsed ? 'justify-center px-0' : 'px-3'}`}
-        title={isCollapsed ? item.name : undefined}
-      >
-        {isActive && <span className="absolute left-0 inset-y-2 w-0.5 bg-[#46B351] rounded-r-full" />}
-        <div className={`flex items-center min-w-0 ${isCollapsed ? 'justify-center' : 'space-x-3'}`}>
-          <Icon size={isCollapsed ? 20 : 16} className={isActive ? 'text-[#46B351] shrink-0' : 'text-slate-500 group-hover:text-slate-300 shrink-0 transition-colors'} />
-          {!isCollapsed && (
-            <span className={`text-[13px] truncate ${isActive ? 'font-semibold text-white' : 'font-medium'}`}>
-              {item.name}
-            </span>
-          )}
-        </div>
-        {!isCollapsed && isActive && <ChevronRight size={12} className="text-[#46B351] shrink-0" />}
-      </Link>
-    );
   };
+
+  // Restore sidebar scroll position across navigation
+  useEffect(() => {
+    const savedScroll = sessionStorage.getItem('sidebar_scroll_top');
+    if (sidebarNavRef.current && savedScroll !== null) {
+      sidebarNavRef.current.scrollTop = Number(savedScroll);
+    }
+  }, [location.pathname, location.search]);
+
+  // When changing route, scroll the page main content container back to top
+  useEffect(() => {
+    if (mainContentRef.current) {
+      mainContentRef.current.scrollTop = 0;
+    }
+  }, [location.pathname]);
+
+  // Ensure Fleet & Logistics menu is open and kept visible when on fleet routes
+  useEffect(() => {
+    if (
+      location.pathname.includes('/tenant/vehicle-master') ||
+      location.pathname.includes('/tenant/fleet-operations') ||
+      location.pathname.includes('/tenant/fms-employee')
+    ) {
+      setOpenMenus(prev => ({ ...prev, 'Fleet & Logistics': true }));
+    }
+  }, [location.pathname]);
 
   return (
     <div className="h-screen bg-[#F1F5F9] flex flex-col md:flex-row overflow-hidden">
@@ -275,14 +232,15 @@ export default function TenantLayout() {
       <aside className={`
         absolute md:static inset-y-0 left-0 z-50 flex flex-col h-full md:h-screen
         bg-[#0F172A] transform transition-all duration-300 ease-in-out relative
-        ${isCollapsed ? 'w-[80px]' : 'w-[200px]'}
+        ${isCollapsed ? 'w-[76px]' : 'w-[220px]'} shrink-0
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
       `}>
 
-        {/* Toggle Button */}
+        {/* Toggle / Minimize Button */}
         <button
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className="absolute -right-3 top-7 bg-[#1E293B] border border-slate-700 text-slate-400 rounded-full p-1 hover:text-white hidden md:flex items-center justify-center z-50 shadow-md transition-colors"
+          className="absolute -right-3 top-7 bg-[#1E293B] border border-slate-700 text-slate-400 rounded-full p-1 hover:text-white hidden md:flex items-center justify-center z-50 shadow-md transition-colors cursor-pointer"
+          title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
           {isCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
         </button>
@@ -313,18 +271,44 @@ export default function TenantLayout() {
         <div className={`border-t border-slate-800/70 mb-3 ${isCollapsed ? 'mx-2' : 'mx-4'}`} />
 
         {/* Scrollable Nav */}
-        <div className="flex-1 overflow-y-auto min-h-0 space-y-5 pb-2">
+        <div
+          ref={sidebarNavRef}
+          onScroll={handleSidebarScroll}
+          className="flex-1 overflow-y-auto min-h-0 space-y-5 pb-2"
+        >
           <div>
             {!isCollapsed && <p className="px-5 pb-1.5 text-[9px] font-black uppercase tracking-[0.25em] text-slate-600">Main Menu</p>}
             <nav className={`space-y-0.5 ${isCollapsed ? 'px-2' : 'px-3'}`}>
-              {mainNavItems.map(item => <NavLink key={item.name} item={item} />)}
+              {mainNavItems.map(item => (
+                <NavLink
+                  key={item.name}
+                  item={item}
+                  isCollapsed={isCollapsed}
+                  isOpen={openMenus[item.name] ?? (item.subItems ? item.subItems.some((s: any) => isPathActive(s.path)) : false)}
+                  onToggle={() => toggleMenu(item.name)}
+                  isPathActive={isPathActive}
+                  onLinkClick={handleNavClick}
+                  currentPath={location.pathname}
+                />
+              ))}
             </nav>
           </div>
           <div>
             <div className={`border-t border-slate-800/60 mb-4 ${isCollapsed ? 'mx-2 mb-2 mt-2' : 'mx-4'}`} />
             {!isCollapsed && <p className="px-5 pb-1.5 text-[9px] font-black uppercase tracking-[0.25em] text-slate-600">Preferences</p>}
             <nav className={`space-y-0.5 ${isCollapsed ? 'px-2' : 'px-3'}`}>
-              {preferenceNavItems.map(item => <NavLink key={item.name} item={item} />)}
+              {preferenceNavItems.map(item => (
+                <NavLink
+                  key={item.name}
+                  item={item}
+                  isCollapsed={isCollapsed}
+                  isOpen={false}
+                  onToggle={() => {}}
+                  isPathActive={isPathActive}
+                  onLinkClick={handleNavClick}
+                  currentPath={location.pathname}
+                />
+              ))}
             </nav>
           </div>
         </div>
@@ -371,7 +355,7 @@ export default function TenantLayout() {
         </div>
 
         {/* Scrollable Page Content */}
-        <main className="flex-1 overflow-x-hidden overflow-y-auto bg-slate-50/60 p-3 sm:p-4 md:p-5 lg:p-6">
+        <main ref={mainContentRef} className="flex-1 overflow-x-hidden overflow-y-auto bg-slate-50/60 p-3 sm:p-4 md:p-5 lg:p-6">
           <div className="w-full">
             <Outlet />
           </div>
@@ -408,3 +392,128 @@ export default function TenantLayout() {
     </div>
   );
 }
+
+interface CollapsibleNavItemProps {
+  item: any;
+  isCollapsed: boolean;
+  isOpen: boolean;
+  onToggle: () => void;
+  isPathActive: (path: string) => boolean;
+  onLinkClick: () => void;
+}
+
+function CollapsibleNavItem({
+  item,
+  isCollapsed,
+  isOpen,
+  onToggle,
+  isPathActive,
+  onLinkClick
+}: CollapsibleNavItemProps) {
+  const isSubActive = item.subItems.some((sub: any) => isPathActive(sub.path));
+  const Icon = item.icon;
+  return (
+    <div className="space-y-0.5">
+      <button
+        type="button"
+        onClick={onToggle}
+        className={`w-full group flex items-center justify-between py-2.5 rounded-lg transition-all duration-150 relative ${isSubActive ? 'bg-white/10 text-white' : 'text-slate-300 hover:bg-white/5 hover:text-white'
+          } ${isCollapsed ? 'justify-center px-0' : 'px-3'}`}
+        title={isCollapsed ? item.name : undefined}
+      >
+        {isSubActive && <span className="absolute left-0 inset-y-2 w-0.5 bg-[#46B351] rounded-r-full" />}
+        <div className={`flex items-center min-w-0 ${isCollapsed ? 'justify-center' : 'space-x-3'}`}>
+          <Icon size={isCollapsed ? 20 : 18} className={isSubActive ? 'text-[#46B351] shrink-0' : 'text-slate-400 group-hover:text-slate-200 shrink-0 transition-colors'} />
+          {!isCollapsed && (
+            <span className={`text-[14px] truncate ${isSubActive ? 'font-bold text-white' : 'font-medium'}`}>
+              {item.name}
+            </span>
+          )}
+        </div>
+        {!isCollapsed && (
+          <ChevronRight
+            size={14}
+            className={`text-slate-400 transition-transform duration-150 ${isOpen ? 'rotate-90 text-[#46B351]' : ''}`}
+          />
+        )}
+      </button>
+
+      {isOpen && !isCollapsed && (
+        <div className="pl-4 space-y-0.5 transition-all duration-150 pt-0.5">
+          {item.subItems.map((sub: any) => {
+            const isSubItemActive = isPathActive(sub.path);
+            const SubIcon = sub.icon;
+            return (
+              <Link
+                key={sub.name}
+                to={sub.path}
+                onClick={onLinkClick}
+                className={`group flex items-center py-2 px-2.5 rounded-lg transition-all duration-150 ${isSubItemActive ? 'text-white bg-white/10 font-bold shadow-2xs' : 'text-slate-300 hover:text-white hover:bg-white/5 font-medium'
+                  }`}
+              >
+                <SubIcon size={14} className={`mr-2.5 shrink-0 ${isSubItemActive ? 'text-[#46B351]' : 'text-slate-400 group-hover:text-slate-200'}`} />
+                <span className="text-[13px] leading-snug truncate">{sub.name}</span>
+              </Link>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface NavLinkProps {
+  item: any;
+  isCollapsed: boolean;
+  isOpen: boolean;
+  onToggle: () => void;
+  isPathActive: (path: string) => boolean;
+  onLinkClick: () => void;
+  currentPath: string;
+}
+
+function NavLink({
+  item,
+  isCollapsed,
+  isOpen,
+  onToggle,
+  isPathActive,
+  onLinkClick,
+  currentPath
+}: NavLinkProps) {
+  if (item.isCollapsible) {
+    return (
+      <CollapsibleNavItem
+        item={item}
+        isCollapsed={isCollapsed}
+        isOpen={isOpen}
+        onToggle={onToggle}
+        isPathActive={isPathActive}
+        onLinkClick={onLinkClick}
+      />
+    );
+  }
+  const isActive = currentPath === item.path || (item.path === '/tenant/dashboard' && currentPath === '/tenant');
+  const Icon = item.icon;
+  return (
+    <Link
+      to={item.path}
+      onClick={onLinkClick}
+      className={`group flex items-center justify-between py-2.5 rounded-lg transition-all duration-150 relative ${isActive ? 'bg-white/10 text-white' : 'text-slate-300 hover:bg-white/5 hover:text-white'
+        } ${isCollapsed ? 'justify-center px-0' : 'px-3'}`}
+      title={isCollapsed ? item.name : undefined}
+    >
+      {isActive && <span className="absolute left-0 inset-y-2 w-0.5 bg-[#46B351] rounded-r-full" />}
+      <div className={`flex items-center min-w-0 ${isCollapsed ? 'justify-center' : 'space-x-3'}`}>
+        <Icon size={isCollapsed ? 20 : 18} className={isActive ? 'text-[#46B351] shrink-0' : 'text-slate-400 group-hover:text-slate-200 shrink-0 transition-colors'} />
+        {!isCollapsed && (
+          <span className={`text-[14px] truncate ${isActive ? 'font-bold text-white' : 'font-medium'}`}>
+            {item.name}
+          </span>
+        )}
+      </div>
+      {!isCollapsed && isActive && <ChevronRight size={14} className="text-[#46B351] shrink-0" />}
+    </Link>
+  );
+}
+

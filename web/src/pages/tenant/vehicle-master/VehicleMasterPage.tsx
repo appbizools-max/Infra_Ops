@@ -2,7 +2,6 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../../context/AuthContext';
 import { apiFetch } from '../../../lib/api';
-import VehicleAssignmentPage from '../vehicle-assignment/VehicleAssignmentPage';
 import {
   Truck,
   HardHat,
@@ -167,15 +166,15 @@ const FUEL_POWER_TYPES = [
 ];
 
 interface VehicleMasterPageProps {
-  initialTab?: 'vehicles' | 'equipment' | 'deployments';
+  initialTab?: 'vehicles' | 'equipment';
 }
 
 export default function VehicleMasterPage({ initialTab }: VehicleMasterPageProps = {}) {
   const { currentUser } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
-  const urlTab = searchParams.get('tab') as 'vehicles' | 'equipment' | 'deployments' | null;
-  const [activeTab, setActiveTab] = useState<'vehicles' | 'equipment' | 'deployments'>(
-    initialTab || urlTab || 'vehicles'
+  const urlTab = searchParams.get('tab') as 'vehicles' | 'equipment' | null;
+  const [activeTab, setActiveTab] = useState<'vehicles' | 'equipment'>(
+    initialTab || (urlTab === 'equipment' ? 'equipment' : 'vehicles')
   );
 
   useEffect(() => {
@@ -187,6 +186,7 @@ export default function VehicleMasterPage({ initialTab }: VehicleMasterPageProps
   // Data states
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [equipmentList, setEquipmentList] = useState<HeavyEquipment[]>([]);
+  const [teamMembers, setTeamMembers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Custom Types dynamic states
@@ -466,6 +466,16 @@ export default function VehicleMasterPage({ initialTab }: VehicleMasterPageProps
         } else {
           console.warn('[VehicleMaster] Non-JSON response for heavy equipment:', contentType);
         }
+      }
+
+      try {
+        const teamRes = await apiFetch(currentUser?.uid ? `/api/tenant/team/${currentUser.uid}` : '/api/tenant/team');
+        if (teamRes.ok) {
+          const tData = await teamRes.json();
+          if (Array.isArray(tData)) setTeamMembers(tData);
+        }
+      } catch (tErr) {
+        console.warn('Failed to fetch team members for assignment:', tErr);
       }
     } catch (err) {
       console.error('Failed to load fleet data:', err);
@@ -1323,6 +1333,129 @@ export default function VehicleMasterPage({ initialTab }: VehicleMasterPageProps
                   </div>
                 </div>
               </div>
+
+              {/* Section 4: Driver Assignment (From Team) */}
+              <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 sm:p-7 space-y-5 w-full">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3.5">
+                  <div className="flex items-center gap-2.5">
+                    <div className="h-8 w-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                      <UserCheck size={16} />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-sm text-slate-900">4. Driver Assignment (From Team)</h3>
+                      <p className="text-[11px] text-slate-400">Assign a registered team driver to this vehicle. The driver will immediately see this truck in their Driver Portal.</p>
+                    </div>
+                  </div>
+                  {vehicleForm.assignedDriverName && (
+                    <button
+                      type="button"
+                      onClick={() => setVehicleForm(prev => ({ ...prev, assignedDriverName: '', assignedDriverPhone: '' }))}
+                      className="text-[11px] font-bold text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+                    >
+                      Unassign Driver
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {/* Driver Selection Dropdown */}
+                  <div className="sm:col-span-2">
+                    <label className="block font-bold text-slate-700 text-xs mb-1.5">
+                      Select Driver from Team
+                    </label>
+                    <select
+                      value={
+                        teamMembers.find(
+                          m => m.name === vehicleForm.assignedDriverName || (vehicleForm.assignedDriverPhone && m.mobile === vehicleForm.assignedDriverPhone)
+                        )?.id || ''
+                      }
+                      onChange={e => {
+                        const selectedId = e.target.value;
+                        if (!selectedId) {
+                          setVehicleForm(prev => ({ ...prev, assignedDriverName: '', assignedDriverPhone: '' }));
+                        } else {
+                          const member = teamMembers.find(m => String(m.id) === String(selectedId));
+                          if (member) {
+                            setVehicleForm(prev => ({
+                              ...prev,
+                              assignedDriverName: member.name || '',
+                              assignedDriverPhone: member.mobile || ''
+                            }));
+                          }
+                        }
+                      }}
+                      className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#46B351]/20 focus:border-[#46B351] font-bold text-xs text-slate-800"
+                    >
+                      <option value="">-- Choose Driver / Team Member --</option>
+                      {teamMembers.map(m => (
+                        <option key={m.id} value={m.id}>
+                          {m.name} ({m.mobile || 'No Mobile'}) — {m.role || m.department || 'Member'} {m.member_id ? `[${m.member_id}]` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Driver Name (editable fallback) */}
+                  <div>
+                    <label className="block font-bold text-slate-700 text-xs mb-1.5">Driver Full Name</label>
+                    <input
+                      type="text"
+                      value={vehicleForm.assignedDriverName || ''}
+                      onChange={e => setVehicleForm(prev => ({ ...prev, assignedDriverName: e.target.value }))}
+                      placeholder="e.g. Ramesh Kumar"
+                      className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:border-[#46B351] font-bold text-xs text-slate-800"
+                    />
+                  </div>
+
+                  {/* Driver Contact Mobile */}
+                  <div>
+                    <label className="block font-bold text-slate-700 text-xs mb-1.5">Driver Contact Mobile</label>
+                    <input
+                      type="tel"
+                      value={vehicleForm.assignedDriverPhone || ''}
+                      onChange={e => setVehicleForm(prev => ({ ...prev, assignedDriverPhone: e.target.value }))}
+                      placeholder="e.g. 9876543210"
+                      className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:border-[#46B351] font-bold text-xs text-slate-800"
+                    />
+                  </div>
+
+                  {/* Assigned Project Tag */}
+                  <div>
+                    <label className="block font-bold text-slate-700 text-xs mb-1.5">Assigned Project Tag</label>
+                    <input
+                      type="text"
+                      value={vehicleForm.assignedProjectName || ''}
+                      onChange={e => setVehicleForm(prev => ({ ...prev, assignedProjectName: e.target.value }))}
+                      placeholder="e.g. Metro Expressway Phase 1"
+                      className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:border-[#46B351] font-bold text-xs text-slate-800"
+                    />
+                  </div>
+
+                  {/* Base Location / Yard */}
+                  <div>
+                    <label className="block font-bold text-slate-700 text-xs mb-1.5">Current Site / Base Depot</label>
+                    <input
+                      type="text"
+                      value={vehicleForm.currentLocation || ''}
+                      onChange={e => setVehicleForm(prev => ({ ...prev, currentLocation: e.target.value }))}
+                      placeholder="e.g. Central Yard, Site A"
+                      className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:border-[#46B351] font-bold text-xs text-slate-800"
+                    />
+                  </div>
+                </div>
+
+                {vehicleForm.assignedDriverName && (
+                  <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-200/60 flex items-center gap-3 text-xs">
+                    <div className="h-8 w-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold shrink-0">
+                      <User size={15} />
+                    </div>
+                    <div>
+                      <span className="font-bold text-slate-800 block">Assigned Driver: {vehicleForm.assignedDriverName}</span>
+                      <span className="text-[11px] text-slate-500">Phone: {vehicleForm.assignedDriverPhone || 'Not specified'} • This driver will see this vehicle in their Driver Portal to log shifts & fuel.</span>
+                    </div>
+                  </div>
+                )}
+              </div>
             </>
           ) : (
             /* ─────────────────────────────────────────────────────────────
@@ -1942,6 +2075,129 @@ export default function VehicleMasterPage({ initialTab }: VehicleMasterPageProps
                   </div>
                 </div>
               </div>
+
+              {/* Section 5: Operator Assignment (From Team) */}
+              <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 sm:p-7 space-y-5 w-full">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3.5">
+                  <div className="flex items-center gap-2.5">
+                    <div className="h-8 w-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+                      <HardHat size={16} />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-sm text-slate-900">5. Operator Assignment (From Team)</h3>
+                      <p className="text-[11px] text-slate-400">Assign a certified machine operator to this heavy equipment. The operator will record engine hours and fuel burn in their portal.</p>
+                    </div>
+                  </div>
+                  {equipmentForm.assignedOperatorName && (
+                    <button
+                      type="button"
+                      onClick={() => setEquipmentForm(prev => ({ ...prev, assignedOperatorName: '', assignedOperatorPhone: '' }))}
+                      className="text-[11px] font-bold text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+                    >
+                      Unassign Operator
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {/* Operator Selection Dropdown */}
+                  <div className="sm:col-span-2">
+                    <label className="block font-bold text-slate-700 text-xs mb-1.5">
+                      Select Operator from Team
+                    </label>
+                    <select
+                      value={
+                        teamMembers.find(
+                          m => m.name === equipmentForm.assignedOperatorName || (equipmentForm.assignedOperatorPhone && m.mobile === equipmentForm.assignedOperatorPhone)
+                        )?.id || ''
+                      }
+                      onChange={e => {
+                        const selectedId = e.target.value;
+                        if (!selectedId) {
+                          setEquipmentForm(prev => ({ ...prev, assignedOperatorName: '', assignedOperatorPhone: '' }));
+                        } else {
+                          const member = teamMembers.find(m => String(m.id) === String(selectedId));
+                          if (member) {
+                            setEquipmentForm(prev => ({
+                              ...prev,
+                              assignedOperatorName: member.name || '',
+                              assignedOperatorPhone: member.mobile || ''
+                            }));
+                          }
+                        }
+                      }}
+                      className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#46B351]/20 focus:border-[#46B351] font-bold text-xs text-slate-800"
+                    >
+                      <option value="">-- Choose Operator / Team Member --</option>
+                      {teamMembers.map(m => (
+                        <option key={m.id} value={m.id}>
+                          {m.name} ({m.mobile || 'No Mobile'}) — {m.role || m.department || 'Member'} {m.member_id ? `[${m.member_id}]` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Direct Operator Name */}
+                  <div>
+                    <label className="block font-bold text-slate-700 text-xs mb-1.5">Operator Full Name</label>
+                    <input
+                      type="text"
+                      value={equipmentForm.assignedOperatorName || ''}
+                      onChange={e => setEquipmentForm(prev => ({ ...prev, assignedOperatorName: e.target.value }))}
+                      placeholder="e.g. Suresh Patel"
+                      className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:border-[#46B351] font-bold text-xs text-slate-800"
+                    />
+                  </div>
+
+                  {/* Operator Mobile Number */}
+                  <div>
+                    <label className="block font-bold text-slate-700 text-xs mb-1.5">Operator Mobile Number</label>
+                    <input
+                      type="tel"
+                      value={equipmentForm.assignedOperatorPhone || ''}
+                      onChange={e => setEquipmentForm(prev => ({ ...prev, assignedOperatorPhone: e.target.value }))}
+                      placeholder="e.g. 9876543210"
+                      className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:border-[#46B351] font-bold text-xs text-slate-800"
+                    />
+                  </div>
+
+                  {/* Assigned Project */}
+                  <div>
+                    <label className="block font-bold text-slate-700 text-xs mb-1.5">Project Tag</label>
+                    <input
+                      type="text"
+                      value={equipmentForm.assignedProjectName || ''}
+                      onChange={e => setEquipmentForm(prev => ({ ...prev, assignedProjectName: e.target.value }))}
+                      placeholder="e.g. Metro Expressway"
+                      className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:border-[#46B351] font-bold text-xs text-slate-800"
+                    />
+                  </div>
+
+                  {/* Assigned Worksite */}
+                  <div>
+                    <label className="block font-bold text-slate-700 text-xs mb-1.5">Assigned Worksite / Yard</label>
+                    <input
+                      type="text"
+                      value={equipmentForm.assignedWorksiteName || ''}
+                      onChange={e => setEquipmentForm(prev => ({ ...prev, assignedWorksiteName: e.target.value }))}
+                      placeholder="e.g. Indirapuram Flyover Site"
+                      className="w-full px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 focus:outline-none focus:border-[#46B351] font-bold text-xs text-slate-800"
+                    />
+                  </div>
+                </div>
+
+                {equipmentForm.assignedOperatorName && (
+                  <div className="p-3 bg-amber-50/60 rounded-xl border border-amber-200/60 flex items-center gap-3 text-xs">
+                    <div className="h-8 w-8 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center font-bold shrink-0">
+                      <HardHat size={15} />
+                    </div>
+                    <div>
+                      <span className="font-bold text-slate-800 block">Assigned Operator: {equipmentForm.assignedOperatorName}</span>
+                      <span className="text-[11px] text-slate-500">Phone: {equipmentForm.assignedOperatorPhone || 'Not specified'} • This operator will record engine hours & fuel burn in the portal.</span>
+                    </div>
+                  </div>
+                )}
+              </div>
             </>
           )}
         </form>
@@ -2113,25 +2369,6 @@ export default function VehicleMasterPage({ initialTab }: VehicleMasterPageProps
               {equipmentList.length}
             </span>
           </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab('deployments');
-              setSearchParams({ tab: 'deployments' });
-            }}
-            className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${activeTab === 'deployments'
-                ? 'bg-slate-900 text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-          >
-            <UserCheck size={14} className={activeTab === 'deployments' ? 'text-blue-400' : 'text-slate-400'} />
-            <span>Site Deployments & Personnel</span>
-            <span className={`px-2 py-0.5 rounded-full text-[10px] ${activeTab === 'deployments' ? 'bg-white/20 text-white' : 'bg-blue-50 text-blue-700 font-bold'
-              }`}>
-              Active
-            </span>
-          </button>
         </div>
       </div>
 
@@ -2215,6 +2452,7 @@ export default function VehicleMasterPage({ initialTab }: VehicleMasterPageProps
                     <th className="py-2 px-2.5">Capacity</th>
                     <th className="py-2 px-2.5">Fuel</th>
                     <th className="py-2 px-2.5">RC / Chassis</th>
+                    <th className="py-2 px-2.5">Assigned Driver</th>
                     <th className="py-2 px-2.5">Status</th>
                     <th className="py-2 px-2.5 text-right">Actions</th>
                   </tr>
@@ -2288,6 +2526,31 @@ export default function VehicleMasterPage({ initialTab }: VehicleMasterPageProps
                         )}
                       </td>
 
+                      {/* Assigned Driver */}
+                      <td className="py-2 px-2.5">
+                        {v.assignedDriverName ? (
+                          <div>
+                            <div className="flex items-center gap-1.5 font-bold text-[11px] text-slate-800">
+                              <User size={11} className="text-[#46B351]" />
+                              <span>{v.assignedDriverName}</span>
+                            </div>
+                            {v.assignedDriverPhone && (
+                              <span className="block text-[10px] text-slate-400 font-medium">
+                                {v.assignedDriverPhone}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditVehicle(v)}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 hover:bg-blue-50 text-slate-500 hover:text-blue-600 transition-colors cursor-pointer"
+                          >
+                            + Assign Driver
+                          </button>
+                        )}
+                      </td>
+
                       {/* Status */}
                       <td className="py-2 px-2.5">
                         {getStatusBadge(v.status)}
@@ -2356,6 +2619,7 @@ export default function VehicleMasterPage({ initialTab }: VehicleMasterPageProps
                     <th className="py-2 px-2.5">Specs</th>
                     <th className="py-2 px-2.5">Fuel</th>
                     <th className="py-2 px-2.5">Hours</th>
+                    <th className="py-2 px-2.5">Assigned Operator</th>
                     <th className="py-2 px-2.5">Status</th>
                     <th className="py-2 px-2.5 text-right">Actions</th>
                   </tr>
@@ -2445,6 +2709,31 @@ export default function VehicleMasterPage({ initialTab }: VehicleMasterPageProps
                         <span className="text-[10px] text-slate-400 ml-1">hrs</span>
                       </td>
 
+                      {/* Assigned Operator */}
+                      <td className="py-2 px-2.5">
+                        {eq.assignedOperatorName ? (
+                          <div>
+                            <div className="flex items-center gap-1.5 font-bold text-[11px] text-slate-800">
+                              <HardHat size={11} className="text-amber-500" />
+                              <span>{eq.assignedOperatorName}</span>
+                            </div>
+                            {eq.assignedOperatorPhone && (
+                              <span className="block text-[10px] text-slate-400 font-medium">
+                                {eq.assignedOperatorPhone}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditEquipment(eq)}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 hover:bg-amber-50 text-slate-500 hover:text-amber-700 transition-colors cursor-pointer"
+                          >
+                            + Assign Operator
+                          </button>
+                        )}
+                      </td>
+
                       {/* Status */}
                       <td className="py-2 px-2.5">
                         {getStatusBadge(eq.status)}
@@ -2479,15 +2768,6 @@ export default function VehicleMasterPage({ initialTab }: VehicleMasterPageProps
               </table>
             </div>
           )}
-        </div>
-      )}
-
-      {/* ──────────────────────────────────────────────────────────────────────────
-          MODULE 3: SITE DEPLOYMENTS & PERSONNEL
-          ────────────────────────────────────────────────────────────────────────── */}
-      {activeTab === 'deployments' && (
-        <div className="w-full">
-          <VehicleAssignmentPage />
         </div>
       )}
 
@@ -2556,6 +2836,31 @@ export default function VehicleMasterPage({ initialTab }: VehicleMasterPageProps
                   <span className="text-[9px] text-slate-400 block font-semibold leading-tight">Vendor / Dealer</span>
                   <span className="font-bold text-slate-800 text-[11px] truncate block mt-0.5">{viewingVehicle.vendor || '—'}</span>
                 </div>
+              </div>
+
+              {/* Assigned Driver Card */}
+              <div className="p-2.5 bg-blue-50/60 rounded-xl border border-blue-200/60 flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="h-8 w-8 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center font-bold shrink-0">
+                    <User size={15} />
+                  </div>
+                  <div>
+                    <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Assigned Driver</span>
+                    <span className="font-bold text-slate-800 text-xs">
+                      {viewingVehicle.assignedDriverName || 'No Driver Assigned'}
+                    </span>
+                    {viewingVehicle.assignedDriverPhone && (
+                      <span className="text-[10px] text-slate-500 block">
+                        Contact: {viewingVehicle.assignedDriverPhone}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {viewingVehicle.assignedProjectName && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-white border border-blue-200 text-blue-700 font-semibold">
+                    {viewingVehicle.assignedProjectName}
+                  </span>
+                )}
               </div>
 
               {/* Insurance Policy Suite Details */}
@@ -2727,6 +3032,31 @@ export default function VehicleMasterPage({ initialTab }: VehicleMasterPageProps
                   {viewingEquipment.notes}
                 </div>
               )}
+
+              {/* Assigned Operator Card */}
+              <div className="p-2.5 bg-amber-50/60 rounded-xl border border-amber-200/60 flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="h-8 w-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center font-bold shrink-0">
+                    <HardHat size={15} />
+                  </div>
+                  <div>
+                    <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Assigned Operator</span>
+                    <span className="font-bold text-slate-800 text-xs">
+                      {viewingEquipment.assignedOperatorName || 'No Operator Assigned'}
+                    </span>
+                    {viewingEquipment.assignedOperatorPhone && (
+                      <span className="text-[10px] text-slate-500 block">
+                        Contact: {viewingEquipment.assignedOperatorPhone}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {viewingEquipment.assignedWorksiteName && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-white border border-amber-200 text-amber-800 font-semibold">
+                    {viewingEquipment.assignedWorksiteName}
+                  </span>
+                )}
+              </div>
 
               {/* Insurance Policy Suite Details */}
               <div className="p-2.5 bg-emerald-50/40 rounded-xl border border-emerald-200/50 space-y-2">

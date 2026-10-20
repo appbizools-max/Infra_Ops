@@ -188,7 +188,7 @@ function App() {
             } />
             <Route path="work-orders" element={<WorkOrdersPage />} />
             <Route path="vehicle-master" element={<VehicleMasterPage />} />
-            <Route path="vehicle-assignment" element={<VehicleMasterPage initialTab="deployments" />} />
+            <Route path="vehicle-assignment" element={<Navigate to="/tenant/vehicle-master" replace />} />
             <Route path="fleet-operations" element={<FleetOperationsPage />} />
             <Route path="fms-employee" element={<FmsEmployeePortalPage />} />
             <Route path="my-vehicle-assignment" element={<Navigate to="/tenant/fms-employee" replace />} />

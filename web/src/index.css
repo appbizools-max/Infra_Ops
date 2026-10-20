@@ -80,10 +80,16 @@
 }
 
 @layer base {
+  html {
+    font-size: 13px;
+    -webkit-text-size-adjust: 100%;
+  }
   * {
     border-color: hsl(var(--border));
   }
   body {
+    font-size: 13px;
+    line-height: 1.45;
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
     -webkit-font-smoothing: antialiased;
