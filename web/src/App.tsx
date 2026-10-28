@@ -25,6 +25,9 @@ import VehicleMasterPage from './pages/tenant/vehicle-master/VehicleMasterPage';
 import VehicleAssignmentPage from './pages/tenant/vehicle-assignment/VehicleAssignmentPage';
 import FleetOperationsPage from './pages/tenant/fleet-operations/FleetOperationsPage';
 import FmsEmployeePortalPage from './pages/tenant/fms-employee/FmsEmployeePortalPage';
+import StockyardPage from './pages/tenant/stockyard/StockyardPage';
+import OperationsCorridorsPage from './pages/tenant/operations-corridors/OperationsCorridorsPage';
+import DispatchWaybillsPage from './pages/tenant/dispatch-waybills/DispatchWaybillsPage';
 import HRPage from './pages/tenant/hr/HRPage';
 import DivisionsPage from './pages/tenant/divisions/DivisionsPage';
 import DepartmentsPage from './pages/tenant/departments/DepartmentsPage';
@@ -68,7 +71,6 @@ function AdminProtectedRoute({ children }: { children: React.ReactNode }) {
   }
   return <>{children}</>;
 }
-
 // Guard for Tenant Routes
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { currentUser, loading } = useAuth();
@@ -79,7 +81,6 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
       </div>
     );
   }
-
   if (!currentUser) {
     return <Navigate to="/login" replace />;
   }
@@ -187,6 +188,12 @@ function App() {
               </RoleGuard>
             } />
             <Route path="work-orders" element={<WorkOrdersPage />} />
+            <Route path="stockyard" element={<StockyardPage />} />
+            <Route path="stockyards" element={<Navigate to="/tenant/stockyard" replace />} />
+            <Route path="operations-corridors" element={<OperationsCorridorsPage />} />
+            <Route path="corridors" element={<Navigate to="/tenant/operations-corridors" replace />} />
+            <Route path="dispatch-waybills" element={<DispatchWaybillsPage />} />
+            <Route path="waybills" element={<Navigate to="/tenant/dispatch-waybills" replace />} />
             <Route path="vehicle-master" element={<VehicleMasterPage />} />
             <Route path="vehicle-assignment" element={<Navigate to="/tenant/vehicle-master" replace />} />
             <Route path="fleet-operations" element={<FleetOperationsPage />} />

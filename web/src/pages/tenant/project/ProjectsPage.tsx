@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { Briefcase, Plus, Search, Filter, Play, CheckCircle2, Clock, DollarSign, Users, MapPin, X, Calendar, Layers, MoreVertical, Trash2, Pin } from 'lucide-react';
+import { Briefcase, Plus, Search, Filter, Play, CheckCircle2, Clock, DollarSign, Users, MapPin, X, Calendar, Layers, MoreVertical, Trash2, Pin, Route } from 'lucide-react';
 interface Project {
   id: string;
   name: string;
@@ -297,7 +297,17 @@ export default function ProjectsPage() {
                         <MoreVertical size={14} />
                       </button>
                       {openMenuId === prj.id && (
-                        <div className="absolute right-4 top-10 w-48 bg-white border border-slate-200 rounded-xl shadow-lg z-20 py-1">
+                        <div className="absolute right-4 top-10 w-52 bg-white border border-slate-200 rounded-xl shadow-lg z-20 py-1">
+                          <button 
+                            onClick={() => {
+                              setOpenMenuId(null);
+                              navigate(`/tenant/project-management/${prj.id}?tab=corridor`);
+                            }}
+                            className="w-full text-left px-4 py-2 text-xs font-bold text-[#00705a] hover:bg-emerald-50 flex items-center"
+                          >
+                            <Route size={13} className="mr-2 text-[#00705a]" />
+                            View Operations Corridor
+                          </button>
                           <button 
                             onClick={() => {
                               setOpenMenuId(null);

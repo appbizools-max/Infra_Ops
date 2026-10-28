@@ -1,14 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { 
-  ArrowLeft, Calendar, MapPin, Users, Layers, Briefcase, 
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import {
+  ArrowLeft, Calendar, MapPin, Users, Layers, Briefcase,
   FileText, CheckCircle2, AlertCircle,
   TrendingUp, TrendingDown, Wallet, ShieldCheck,
   Building2, Search, ArrowUpRight, ArrowDownLeft,
-  Copy, Check, HardHat, RefreshCw,
+  Copy, Check, HardHat, RefreshCw, User, Route,
   Truck, Train, Ship, Plane, ArrowRight, Scale
 } from 'lucide-react';
-
 interface WorkOrderDossier {
   id: number;
   orderNumber: string;
@@ -87,7 +86,6 @@ interface ProjectTeamMember {
   mobile?: string;
   assignedAt?: string;
 }
-
 interface Project {
   id: string;
   projectId: string;
@@ -110,6 +108,13 @@ interface Project {
   transactions?: ProjectTransaction[];
   assignedHead?: AssignedHead;
   teamMembers?: ProjectTeamMember[];
+  corridors?: any[];
+  assignedVehicles?: any[];
+  assignedEquipment?: any[];
+  fuelLogs?: any[];
+  fuelSummary?: { totalLiters: number; totalFuelCost: number; totalKm: number; totalTrips: number };
+  dispatchPassports?: any[];
+  crewRoster?: any[];
 }
 
 export default function ProjectDetailsPage() {
@@ -120,8 +125,10 @@ export default function ProjectDetailsPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Simple clean tabs: 'overview' or 'transactions'
-  const [viewMode, setViewMode] = useState<'overview' | 'transactions'>('overview');
+  const [searchParams] = useSearchParams();
+  const initialTab = (searchParams.get('tab') as any) || 'overview';
+  // 360 Operations Tabs: overview, corridor, fleet, crew, fuel, waybills, transactions
+  const [viewMode, setViewMode] = useState<'overview' | 'corridor' | 'fleet' | 'crew' | 'fuel' | 'waybills' | 'transactions'>(initialTab);
 
   // Toast notification state
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -218,8 +225,8 @@ export default function ProjectDetailsPage() {
         <AlertCircle size={36} className="text-rose-500 mx-auto mb-3" />
         <h2 className="text-lg font-black text-slate-900">Project Not Found</h2>
         <p className="text-xs text-slate-500 mt-1">This project does not exist or has been removed.</p>
-        <button 
-          onClick={() => navigate('/tenant/project-management')} 
+        <button
+          onClick={() => navigate('/tenant/project-management')}
           className="mt-5 px-5 py-2 bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-wider"
         >
           Back to Projects
@@ -252,7 +259,7 @@ export default function ProjectDetailsPage() {
 
   return (
     <div className="animate-in fade-in duration-200 pb-16 space-y-6">
-      
+
       {/* Toast Banner */}
       {toastMessage && (
         <div className="fixed top-5 right-5 z-50 flex items-center gap-2 px-4 py-2.5 bg-slate-900 text-white text-xs font-bold rounded-2xl shadow-xl border border-slate-700 animate-in slide-in-from-top-2">
@@ -265,7 +272,7 @@ export default function ProjectDetailsPage() {
       <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 sm:p-7 space-y-5">
         {/* Navigation & Action Buttons */}
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <button 
+          <button
             onClick={() => navigate('/tenant/project-management')}
             className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-900 bg-slate-100 hover:bg-slate-200/80 px-3 py-1.5 rounded-xl transition-colors"
           >
@@ -291,14 +298,13 @@ export default function ProjectDetailsPage() {
               <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
                 {project.name}
               </h1>
-              
+
               {/* Status Badge */}
-              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${
-                project.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                project.status === 'Completed' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                project.status === 'On Hold' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                'bg-slate-50 text-slate-600 border-slate-200'
-              }`}>
+              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${project.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                  project.status === 'Completed' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                    project.status === 'On Hold' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                      'bg-slate-50 text-slate-600 border-slate-200'
+                }`}>
                 {project.status}
               </span>
 
@@ -331,23 +337,56 @@ export default function ProjectDetailsPage() {
             </div>
           </div>
 
-          {/* Simple View Switcher: Details vs All Transactions */}
-          <div className="flex items-center p-1 bg-slate-100 rounded-2xl border border-slate-200 shrink-0">
+          {/* 360 Operations Command Tabs Switcher */}
+          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-2xl border border-slate-200 overflow-x-auto scrollbar-none shrink-0 max-w-full">
             <button
               onClick={() => setViewMode('overview')}
-              className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
-                viewMode === 'overview' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'
-              }`}
+              className={`px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap ${viewMode === 'overview' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                }`}
             >
-              Project Details & P&L
+              Overview & P&L
+            </button>
+            <button
+              onClick={() => setViewMode('corridor')}
+              className={`px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap ${viewMode === 'corridor' ? 'bg-white text-[#00705a] shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                }`}
+            >
+              Corridor Sketch ({project.corridors?.length || 0})
+            </button>
+            <button
+              onClick={() => setViewMode('fleet')}
+              className={`px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap ${viewMode === 'fleet' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                }`}
+            >
+              Fleet & Machinery ({(project.assignedVehicles?.length || 0) + (project.assignedEquipment?.length || 0)})
+            </button>
+            <button
+              onClick={() => setViewMode('crew')}
+              className={`px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap ${viewMode === 'crew' ? 'bg-white text-purple-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                }`}
+            >
+              Crew Roster ({project.crewRoster?.length || 0})
+            </button>
+            <button
+              onClick={() => setViewMode('fuel')}
+              className={`px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap ${viewMode === 'fuel' ? 'bg-white text-amber-800 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                }`}
+            >
+              Fuel & Trips ({project.fuelLogs?.length || 0})
+            </button>
+            <button
+              onClick={() => setViewMode('waybills')}
+              className={`px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap ${viewMode === 'waybills' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                }`}
+            >
+              Waybills ({project.dispatchPassports?.length || 0})
             </button>
             <button
               onClick={() => setViewMode('transactions')}
-              className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
-                viewMode === 'transactions' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'
-              }`}
+              className={`px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap ${viewMode === 'transactions' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                }`}
             >
-              All Transactions ({project.transactions?.length || 0})
+              Ledger ({project.transactions?.length || 0})
             </button>
           </div>
         </div>
@@ -355,7 +394,7 @@ export default function ProjectDetailsPage() {
 
       {/* Financial P&L Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        
+
         {/* Estimated Contract Budget */}
         <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
           <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1.5">
@@ -399,9 +438,8 @@ export default function ProjectDetailsPage() {
         </div>
 
         {/* Net Profit / Loss (P&L) */}
-        <div className={`rounded-2xl border p-5 shadow-sm ${
-          fin.netProfitLoss >= 0 ? 'bg-emerald-50/70 border-emerald-200' : 'bg-rose-50/70 border-rose-200'
-        }`}>
+        <div className={`rounded-2xl border p-5 shadow-sm ${fin.netProfitLoss >= 0 ? 'bg-emerald-50/70 border-emerald-200' : 'bg-rose-50/70 border-rose-200'
+          }`}>
           <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider mb-1.5">
             <span className={fin.netProfitLoss >= 0 ? 'text-emerald-800' : 'text-rose-800'}>
               Net Profit / Loss (P&L)
@@ -425,10 +463,10 @@ export default function ProjectDetailsPage() {
       {/* VIEW 1: OVERVIEW & DETAILS (Work Order Notes, Scope, People Assigned) */}
       {viewMode === 'overview' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          
+
           {/* Main 2-Col Column */}
           <div className="lg:col-span-2 space-y-6">
-            
+
             {/* Origin Work Order Notes & Details Card */}
             <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 sm:p-7 space-y-5">
               <div className="flex items-center justify-between border-b border-slate-100 pb-4">
@@ -462,9 +500,9 @@ export default function ProjectDetailsPage() {
                         {wo.transportModes.split(',').map(m => m.trim()).filter(Boolean).map(mode => (
                           <span key={mode} className="inline-flex items-center gap-1 text-[10px] font-bold bg-white text-slate-700 px-2 py-0.5 rounded-md border border-slate-200 shadow-2xs">
                             {mode.toLowerCase().includes('rail') ? <Train size={11} className="text-amber-600" /> :
-                             mode.toLowerCase().includes('ship') ? <Ship size={11} className="text-blue-600" /> :
-                             mode.toLowerCase().includes('air') ? <Plane size={11} className="text-indigo-600" /> :
-                             <Truck size={11} className="text-emerald-600" />}
+                              mode.toLowerCase().includes('ship') ? <Ship size={11} className="text-blue-600" /> :
+                                mode.toLowerCase().includes('air') ? <Plane size={11} className="text-indigo-600" /> :
+                                  <Truck size={11} className="text-emerald-600" />}
                             {mode}
                           </span>
                         ))}
@@ -552,8 +590,8 @@ export default function ProjectDetailsPage() {
                   Work Order Directives & Safety Notes
                 </span>
                 <div className="p-4 bg-amber-50/70 border border-amber-200/80 rounded-2xl text-xs font-semibold text-amber-950 leading-relaxed">
-                  {wo?.notes && wo.notes.trim() 
-                    ? wo.notes 
+                  {wo?.notes && wo.notes.trim()
+                    ? wo.notes
                     : 'Mandatory PPE (helmets, safety shoes, reflective vests) must be worn at worksite. All cargo receipts and bills must be verified by the assigned Project Head.'}
                 </div>
               </div>
@@ -581,9 +619,8 @@ export default function ProjectDetailsPage() {
                     return (
                       <div key={tx.id} className="p-3 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between text-xs">
                         <div className="flex items-center gap-3">
-                          <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold ${
-                            isCredit ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
-                          }`}>
+                          <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold ${isCredit ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
+                            }`}>
                             {isCredit ? <ArrowUpRight size={15} /> : <ArrowDownLeft size={15} />}
                           </div>
                           <div>
@@ -611,7 +648,7 @@ export default function ProjectDetailsPage() {
 
           {/* Right Column: People Assigned to this Project */}
           <div className="space-y-6">
-            
+
             {/* Leadership Card */}
             <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 space-y-4">
               <div className="flex items-center justify-between">
@@ -676,6 +713,371 @@ export default function ProjectDetailsPage() {
         </div>
       )}
 
+      {/* VIEW: OPERATIONS CORRIDOR SKETCH */}
+      {viewMode === 'corridor' && (
+        <div className="space-y-6">
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 sm:p-7">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4 mb-6">
+              <div>
+                <h3 className="text-base font-black text-slate-900">Multi-Modal Operations Corridor Blueprint</h3>
+                <p className="text-xs text-slate-500 font-medium">Route topology, loading worksites, transshipment sidings & site delivery</p>
+              </div>
+              <button
+                onClick={() => navigate('/tenant/operations-corridors')}
+                className="flex items-center gap-1.5 text-xs font-bold text-[#00705a] hover:underline"
+              >
+                <span>Open Operations Sketch Studio</span>
+                <ArrowRight size={14} />
+              </button>
+            </div>
+
+            {(!project.corridors || project.corridors.length === 0) ? (
+              <div className="py-12 text-center">
+                <Route size={32} className="text-slate-300 mx-auto mb-2" />
+                <h4 className="text-xs font-bold text-slate-700">No Operations Corridor Linked Yet</h4>
+                <p className="text-[11px] text-slate-400 mt-1">Design an operations sketch linking worksites, road/rail legs, and stockyards for this project.</p>
+                <button
+                  onClick={() => navigate('/tenant/operations-corridors')}
+                  className="mt-4 px-4 py-2 bg-[#00705a] hover:bg-[#005a48] text-white text-xs font-bold rounded-xl shadow-xs"
+                >
+                  Create Operations Sketch
+                </button>
+              </div>
+            ) : (
+              project.corridors.map((c: any) => (
+                <div key={c.id} className="space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-50 p-4 rounded-2xl border border-slate-200/80">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xs font-black text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-200">
+                          {c.corridorCode}
+                        </span>
+                        <h4 className="text-sm font-black text-slate-900">{c.name}</h4>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1">{c.description}</p>
+                    </div>
+                    <div className="text-right text-xs">
+                      <div className="text-[10px] font-bold text-slate-400 uppercase">Distance & TAT</div>
+                      <div className="font-black text-slate-800">{c.totalDistanceKm} KM · ~{c.estimatedCycleTimeHours}h TAT</div>
+                    </div>
+                  </div>
+
+                  {/* Legs Pipeline */}
+                  <div className="overflow-x-auto pb-2">
+                    <div className="min-w-[700px] flex items-center justify-between gap-2 pt-2">
+                      {(c.legs || []).map((leg: any, lIdx: number) => (
+                        <React.Fragment key={leg.id || lIdx}>
+                          <div className="flex flex-col items-center shrink-0 w-40 text-center">
+                            <div className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-700 border border-amber-200 flex items-center justify-center font-bold shadow-xs">
+                              <MapPin size={18} />
+                            </div>
+                            <div className="text-xs font-black text-slate-900 mt-1.5 line-clamp-1">{leg.originName}</div>
+                            <span className="text-[9px] font-bold uppercase text-slate-400">{leg.originType}</span>
+                          </div>
+
+                          <div className="flex-1 flex flex-col items-center px-2 py-2 bg-slate-50 rounded-2xl border border-slate-200">
+                            <div className="text-[9px] font-black uppercase text-slate-500 flex items-center gap-1">
+                              {leg.transportMode === 'Rail' ? <Train size={11} className="text-blue-600" /> : <Truck size={11} className="text-[#00705a]" />}
+                              <span>{leg.transportMode} · {leg.distanceKm} KM</span>
+                            </div>
+                            <div className="w-full h-1 bg-[#00705a] rounded-full my-1" />
+                            <span className="text-[9px] text-slate-400">{leg.estimatedTatHours}h Turnaround</span>
+                          </div>
+
+                          {lIdx === c.legs.length - 1 && (
+                            <div className="flex flex-col items-center shrink-0 w-40 text-center">
+                              <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-700 border border-indigo-200 flex items-center justify-center font-bold shadow-xs">
+                                <Building2 size={18} />
+                              </div>
+                              <div className="text-xs font-black text-slate-900 mt-1.5 line-clamp-1">{leg.destinationName}</div>
+                              <span className="text-[9px] font-bold uppercase text-slate-400">{leg.destinationType}</span>
+                            </div>
+                          )}
+                        </React.Fragment>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* VIEW: ASSIGNED FLEET & HEAVY MACHINERY */}
+      {viewMode === 'fleet' && (
+        <div className="space-y-6">
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 sm:p-7 space-y-6">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <div>
+                <h3 className="text-base font-black text-slate-900">Committed Fleet & Heavy Equipment</h3>
+                <p className="text-xs text-slate-500 font-medium">Commercial trucks, haulage tippers, and earthmoving machinery assigned to this project</p>
+              </div>
+              <button
+                onClick={() => navigate('/tenant/vehicle-master')}
+                className="flex items-center gap-1.5 text-xs font-bold text-[#00705a] hover:underline"
+              >
+                <span>Fleet Hub</span>
+                <ArrowRight size={14} />
+              </button>
+            </div>
+
+            {/* Trucks & Commercial Vehicles */}
+            <div className="space-y-3">
+              <h4 className="text-xs font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <Truck size={14} className="text-[#00705a]" />
+                <span>Commercial Trucks & Tippers ({project.assignedVehicles?.length || 0})</span>
+              </h4>
+
+              {(!project.assignedVehicles || project.assignedVehicles.length === 0) ? (
+                <div className="p-6 text-center bg-slate-50 rounded-2xl border border-slate-200/80 text-xs text-slate-400 font-semibold">
+                  No haulage trucks currently assigned to this project.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {project.assignedVehicles.map((v: any) => (
+                    <div key={v.id} className="p-4 rounded-2xl bg-slate-50/80 border border-slate-200 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-xs font-black text-slate-900 bg-white px-2.5 py-0.5 rounded border border-slate-200">
+                          {v.vehicleNumber}
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          {v.status || 'Active'}
+                        </span>
+                      </div>
+                      <div className="text-xs font-black text-slate-800">{v.vehicleType} · {v.make} {v.model}</div>
+                      <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between text-xs text-slate-500">
+                        <span>Payload: {v.tonCapacity || '—'} MT</span>
+                        <span className="font-bold text-slate-700">Driver: {v.assignedDriverName || 'Unassigned'}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Heavy Earthmoving Equipment */}
+            <div className="space-y-3 pt-4 border-t border-slate-100">
+              <h4 className="text-xs font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <HardHat size={14} className="text-amber-600" />
+                <span>Heavy Earthmoving Machinery & Cranes ({project.assignedEquipment?.length || 0})</span>
+              </h4>
+
+              {(!project.assignedEquipment || project.assignedEquipment.length === 0) ? (
+                <div className="p-6 text-center bg-slate-50 rounded-2xl border border-slate-200/80 text-xs text-slate-400 font-semibold">
+                  No heavy machinery currently deployed on this project.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {project.assignedEquipment.map((eq: any) => (
+                    <div key={eq.id} className="p-4 rounded-2xl bg-slate-50/80 border border-slate-200 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-xs font-black text-slate-900 bg-white px-2.5 py-0.5 rounded border border-slate-200">
+                          {eq.equipmentNumber}
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                          {eq.status || 'Active'}
+                        </span>
+                      </div>
+                      <div className="text-xs font-black text-slate-800">{eq.equipmentType} · {eq.make} {eq.model}</div>
+                      <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between text-xs text-slate-500">
+                        <span>HMR: {eq.hourMeterReading || 0} Hrs</span>
+                        <span className="font-bold text-slate-700">Operator: {eq.assignedOperatorName || 'Unassigned'}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* VIEW: STAFF & CREW ROSTER */}
+      {viewMode === 'crew' && (
+        <div className="space-y-6">
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 sm:p-7 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <div>
+                <h3 className="text-base font-black text-slate-900">Project Staff & Crew Roster</h3>
+                <p className="text-xs text-slate-500 font-medium">Leadership, site supervisors, licensed drivers and certified machinery operators</p>
+              </div>
+              <span className="text-xs font-bold text-slate-500 bg-slate-100 px-3 py-1 rounded-xl">
+                {project.crewRoster?.length || 0} Personnel
+              </span>
+            </div>
+
+            {(!project.crewRoster || project.crewRoster.length === 0) ? (
+              <div className="py-12 text-center text-xs text-slate-400 font-semibold">
+                No personnel roster configured yet.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {project.crewRoster.map((c: any, cIdx: number) => (
+                  <div key={cIdx} className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-white border border-slate-200 flex items-center justify-center font-bold text-slate-700 shadow-xs">
+                      <User size={18} />
+                    </div>
+                    <div>
+                      <div className="text-xs font-black text-slate-900">{c.name}</div>
+                      <div className="text-[11px] text-slate-500 font-medium">{c.role}</div>
+                      <span className="inline-block mt-1 text-[9px] font-bold uppercase tracking-wider px-2 py-0.2 rounded bg-slate-200/70 text-slate-700">
+                        {c.category}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* VIEW: FUEL & RUNNING EXPENSE LEDGER */}
+      {viewMode === 'fuel' && (
+        <div className="space-y-6">
+          {/* Fuel Rollup Metrics */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+              <div className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">Total Fuel Issued</div>
+              <div className="text-2xl font-black text-slate-900">
+                {(project.fuelSummary?.totalLiters || 0).toLocaleString()} <span className="text-sm font-bold text-slate-500">Ltrs</span>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-0.5">Diesel top-up records</p>
+            </div>
+            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+              <div className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">Total Fuel Expenses</div>
+              <div className="text-2xl font-black text-rose-600">
+                {formatINR(project.fuelSummary?.totalFuelCost || 0)}
+              </div>
+              <p className="text-[11px] text-slate-500 mt-0.5">Automated project P&L debit</p>
+            </div>
+            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+              <div className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">Total Distance Run</div>
+              <div className="text-2xl font-black text-slate-900">
+                {(project.fuelSummary?.totalKm || 0).toLocaleString()} <span className="text-sm font-bold text-slate-500">KM</span>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-0.5">Logged across fleet tippers</p>
+            </div>
+            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+              <div className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">Trips Completed</div>
+              <div className="text-2xl font-black text-emerald-700">
+                {project.fuelSummary?.totalTrips || 0}
+              </div>
+              <p className="text-[11px] text-slate-500 mt-0.5">Corridor haulage cycles</p>
+            </div>
+          </div>
+
+          {/* Fuel Log Entries Table */}
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 space-y-4">
+            <h3 className="text-base font-black text-slate-900">Project Daily Fuel & Running Logs</h3>
+            {(!project.fuelLogs || project.fuelLogs.length === 0) ? (
+              <div className="py-12 text-center text-xs text-slate-400 font-semibold">
+                No fuel logs recorded yet for this project.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-400 font-black uppercase tracking-wider text-[10px]">
+                    <tr>
+                      <th className="py-3 px-4">Date</th>
+                      <th className="py-3 px-4">Asset / Vehicle</th>
+                      <th className="py-3 px-4">Driver</th>
+                      <th className="py-3 px-4">Fuel Station</th>
+                      <th className="py-3 px-4 text-right">Fuel (Liters)</th>
+                      <th className="py-3 px-4 text-right">Total Cost</th>
+                      <th className="py-3 px-4 text-right">Distance (KM)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
+                    {project.fuelLogs.map((fl: any) => (
+                      <tr key={fl.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="py-3.5 px-4 font-mono text-slate-600">{fl.logDate}</td>
+                        <td className="py-3.5 px-4 font-mono font-bold text-slate-900">{fl.assetNumber}</td>
+                        <td className="py-3.5 px-4 font-bold text-slate-800">{fl.driverName}</td>
+                        <td className="py-3.5 px-4 text-slate-500">{fl.fuelStation || 'Site Bowzer'}</td>
+                        <td className="py-3.5 px-4 text-right font-mono font-black text-slate-900">{fl.fuelFilledLiters} L</td>
+                        <td className="py-3.5 px-4 text-right font-mono font-black text-rose-600">{formatINR(fl.fuelTotalCost)}</td>
+                        <td className="py-3.5 px-4 text-right font-mono text-slate-700">{fl.distanceRun} KM</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* VIEW: MATERIAL PASSPORTS & DISPATCH SLIPS */}
+      {viewMode === 'waybills' && (
+        <div className="space-y-6">
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <div>
+                <h3 className="text-base font-black text-slate-900">Project Material Passports & Dispatch Slips</h3>
+                <p className="text-xs text-slate-500 font-medium">Digital weighbridge slips, outward & delivery receipts under this project</p>
+              </div>
+              <button
+                onClick={() => navigate('/tenant/dispatch-waybills')}
+                className="flex items-center gap-1.5 text-xs font-bold text-[#00705a] hover:underline"
+              >
+                <span>Dispatch Manager</span>
+                <ArrowRight size={14} />
+              </button>
+            </div>
+
+            {(!project.dispatchPassports || project.dispatchPassports.length === 0) ? (
+              <div className="py-12 text-center text-xs text-slate-400 font-semibold">
+                No dispatch waybills issued under this project yet.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-400 font-black uppercase tracking-wider text-[10px]">
+                    <tr>
+                      <th className="py-3 px-4">Waybill #</th>
+                      <th className="py-3 px-4">Material & Grade</th>
+                      <th className="py-3 px-4">From ➔ To</th>
+                      <th className="py-3 px-4">Vehicle & Pilot</th>
+                      <th className="py-3 px-4 text-right">Net Weight</th>
+                      <th className="py-3 px-4">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
+                    {project.dispatchPassports.map((wb: any) => (
+                      <tr key={wb.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="py-3.5 px-4 font-mono font-bold text-slate-900">{wb.waybillNumber}</td>
+                        <td className="py-3.5 px-4">
+                          <div className="font-bold text-slate-800">{wb.materialName}</div>
+                          <div className="text-[10px] text-slate-400">{wb.grade}</div>
+                        </td>
+                        <td className="py-3.5 px-4 text-[11px] text-slate-600">
+                          {wb.originYardName} ➔ {wb.destinationYardName}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <div className="font-mono font-bold text-slate-900">{wb.vehicleNumber}</div>
+                          <div className="text-[11px] text-slate-500">{wb.driverName}</div>
+                        </td>
+                        <td className="py-3.5 px-4 text-right font-mono font-black text-slate-900">{wb.netWeight} MT</td>
+                        <td className="py-3.5 px-4">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${wb.status === 'Delivered'
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : 'bg-blue-50 text-blue-700 border border-blue-200'
+                            }`}>
+                            {wb.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* VIEW 2: ALL TRANSACTIONS (UNIFIED LEDGER) */}
       {viewMode === 'transactions' && (
         <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 sm:p-7 space-y-6">
@@ -697,9 +1099,8 @@ export default function ProjectDetailsPage() {
                 <button
                   key={f.id}
                   onClick={() => setTxFilter(f.id as any)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider whitespace-nowrap transition-all ${
-                    txFilter === f.id ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:text-slate-900'
-                  }`}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider whitespace-nowrap transition-all ${txFilter === f.id ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:text-slate-900'
+                    }`}
                 >
                   {f.label}
                 </button>
@@ -748,9 +1149,8 @@ export default function ProjectDetailsPage() {
                             </span>
                           </td>
                           <td className="py-3.5 px-4 whitespace-nowrap">
-                            <span className={`inline-block px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${
-                              isCredit ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'
-                            }`}>
+                            <span className={`inline-block px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${isCredit ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'
+                              }`}>
                               {tx.type}
                             </span>
                             <span className="block text-[10px] text-slate-400 font-semibold mt-0.5">{tx.category}</span>
@@ -766,9 +1166,8 @@ export default function ProjectDetailsPage() {
                               {tx.source}
                             </span>
                           </td>
-                          <td className={`py-3.5 px-4 text-right font-black whitespace-nowrap text-sm ${
-                            isCredit ? 'text-emerald-600' : 'text-slate-900'
-                          }`}>
+                          <td className={`py-3.5 px-4 text-right font-black whitespace-nowrap text-sm ${isCredit ? 'text-emerald-600' : 'text-slate-900'
+                            }`}>
                             {isCredit ? '+' : '-'}{formatINR(tx.amount)}
                           </td>
                         </tr>

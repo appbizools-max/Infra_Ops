@@ -2661,6 +2661,178 @@ app.get(['/api/tenant/project/:id', '/api/tenant/projects/detail/:id'], async (r
         companyUsers = uRes.rows;
       } catch (uErr: any) { }
     }
+
+    // 5. Fetch Multi-Modal Operations Corridors for this Project
+    let corridors: any[] = [];
+    try {
+      const corrRes = await pool.query(`
+        SELECT 
+          id,
+          corridor_code as "corridorCode",
+          name,
+          topology_type as "topologyType",
+          description,
+          origin_summary as "originSummary",
+          destination_summary as "destinationSummary",
+          transshipment_hub as "transshipmentHub",
+          total_distance_km as "totalDistanceKm",
+          estimated_cycle_time_hours as "estimatedCycleTimeHours",
+          status
+        FROM tenant_operations_corridors
+        WHERE project_id = $1 OR project_name ILIKE $2
+        ORDER BY id DESC
+      `, [pId, `%${proj.name}%`]);
+
+      for (const c of corrRes.rows) {
+        const legsRes = await pool.query(`
+          SELECT 
+            id, leg_sequence as "legSequence", leg_name as "legName",
+            origin_name as "originName", origin_type as "originType",
+            destination_name as "destinationName", destination_type as "destinationType",
+            transport_mode as "transportMode", distance_km as "distanceKm",
+            estimated_tat_hours as "estimatedTatHours", transshipment_required as "transshipmentRequired",
+            lead_transporter as "leadTransporter"
+          FROM tenant_corridor_legs
+          WHERE corridor_id = $1
+          ORDER BY leg_sequence ASC
+        `, [c.id]);
+
+        const assetsRes = await pool.query(`
+          SELECT 
+            id, leg_id as "legId", asset_type as "assetType", asset_id as "assetId",
+            asset_number as "assetNumber", asset_title as "assetTitle",
+            assigned_person_name as "assignedPersonName", assigned_person_phone as "assignedPersonPhone",
+            assigned_person_role as "assignedPersonRole", shift, operating_status as "operatingStatus"
+          FROM tenant_corridor_assets
+          WHERE corridor_id = $1
+        `, [c.id]);
+
+        corridors.push({
+          ...c,
+          legs: legsRes.rows,
+          assets: assetsRes.rows
+        });
+      }
+    } catch (cErr: any) {
+      console.warn('Error fetching project corridors:', cErr.message);
+    }
+
+    // 6. Fetch Assigned Vehicles & Heavy Equipment
+    let assignedVehicles: any[] = [];
+    let assignedEquipment: any[] = [];
+    try {
+      const vRes = await pool.query(`
+        SELECT 
+          id, vehicle_number as "vehicleNumber", vehicle_type as "vehicleType",
+          make, model, ton_capacity as "tonCapacity",
+          assigned_driver_name as "assignedDriverName", assigned_driver_phone as "assignedDriverPhone",
+          fuel_power_type as "fuelPowerType", fuel_consumption as "fuelConsumption",
+          current_location as "currentLocation", status
+        FROM tenant_vehicles
+        WHERE assigned_project_id = $1 OR assigned_project_name ILIKE $2
+        ORDER BY id DESC
+      `, [pId, `%${proj.name}%`]);
+      assignedVehicles = vRes.rows;
+
+      const eqRes = await pool.query(`
+        SELECT 
+          id, equipment_id as "equipmentId", equipment_number as "equipmentNumber",
+          equipment_type as "equipmentType", make, model,
+          excavator_bucket_capacity as "bucketCapacity", hour_meter_reading as "hourMeterReading",
+          assigned_operator_name as "assignedOperatorName", assigned_operator_phone as "assignedOperatorPhone",
+          fuel_power_type as "fuelPowerType", status
+        FROM tenant_heavy_equipment
+        WHERE assigned_project_id = $1 OR assigned_project_name ILIKE $2
+        ORDER BY id DESC
+      `, [pId, `%${proj.name}%`]);
+      assignedEquipment = eqRes.rows;
+    } catch (fErr: any) {
+      console.warn('Error fetching project fleet:', fErr.message);
+    }
+
+    // 7. Fetch Project Fuel & Trip Logs from Fleet Daily Logs
+    let fuelLogs: any[] = [];
+    let fuelSummary = { totalLiters: 0, totalFuelCost: 0, totalKm: 0, totalTrips: 0 };
+    try {
+      const flRes = await pool.query(`
+        SELECT 
+          id, asset_number as "assetNumber", asset_type as "assetType",
+          driver_name as "driverName", driver_phone as "driverPhone",
+          TO_CHAR(log_date, 'YYYY-MM-DD') as "logDate", shift, stage,
+          distance_run as "distanceRun", fuel_filled_liters as "fuelFilledLiters",
+          fuel_total_cost as "fuelTotalCost", fuel_station as "fuelStation",
+          trips_count as "tripsCount", remarks
+        FROM tenant_fleet_daily_logs
+        WHERE project_id = $1 OR project_name ILIKE $2
+        ORDER BY log_date DESC LIMIT 50
+      `, [pId, `%${proj.name}%`]);
+      fuelLogs = flRes.rows;
+
+      for (const fl of fuelLogs) {
+        fuelSummary.totalLiters += parseFloat(fl.fuelFilledLiters || 0);
+        fuelSummary.totalFuelCost += parseFloat(fl.fuelTotalCost || 0);
+        fuelSummary.totalKm += parseFloat(fl.distanceRun || 0);
+        fuelSummary.totalTrips += parseInt(fl.tripsCount || 0, 10);
+      }
+    } catch (flErr: any) {
+      console.warn('Error fetching project fuel logs:', flErr.message);
+    }
+
+    // 8. Fetch Project Dispatch Waybills
+    let dispatchPassports: any[] = [];
+    try {
+      const wbRes = await pool.query(`
+        SELECT 
+          id, waybill_number as "waybillNumber", corridor_name as "corridorName",
+          origin_yard_name as "originYardName", destination_yard_name as "destinationYardName",
+          material_name as "materialName", grade, net_weight as "netWeight",
+          vehicle_number as "vehicleNumber", driver_name as "driverName", driver_phone as "driverPhone",
+          status, dispatched_at as "dispatchedAt", delivered_at as "deliveredAt"
+        FROM tenant_dispatch_waybills
+        WHERE project_id = $1 OR project_name ILIKE $2
+        ORDER BY dispatched_at DESC LIMIT 50
+      `, [pId, `%${proj.name}%`]);
+      dispatchPassports = wbRes.rows;
+    } catch (wbErr: any) {
+      console.warn('Error fetching project waybills:', wbErr.message);
+    }
+
+    // 9. Combined Crew Roster (Leadership, Supervisors, Drivers, Operators)
+    const crewRoster: any[] = [];
+    if (projectHeadName) {
+      crewRoster.push({
+        name: projectHeadName,
+        role: projectHeadRole || 'Project Lead',
+        category: 'Leadership',
+        phone: '',
+        email: ''
+      });
+    }
+    // Add drivers from assigned vehicles
+    for (const v of assignedVehicles) {
+      if (v.assignedDriverName && !crewRoster.some(c => c.name === v.assignedDriverName)) {
+        crewRoster.push({
+          name: v.assignedDriverName,
+          role: `Driver (${v.vehicleNumber})`,
+          category: 'Fleet Crew',
+          phone: v.assignedDriverPhone || '',
+          email: ''
+        });
+      }
+    }
+    // Add operators from assigned equipment
+    for (const eq of assignedEquipment) {
+      if (eq.assignedOperatorName && !crewRoster.some(c => c.name === eq.assignedOperatorName)) {
+        crewRoster.push({
+          name: eq.assignedOperatorName,
+          role: `Heavy Operator (${eq.equipmentNumber})`,
+          category: 'Heavy Equipment Crew',
+          phone: eq.assignedOperatorPhone || '',
+          email: ''
+        });
+      }
+    }
+
     res.json({
       ...proj,
       workOrder,
@@ -2681,7 +2853,14 @@ app.get(['/api/tenant/project/:id', '/api/tenant/projects/detail/:id'], async (r
         division: divisionName
       },
       teamMembers: customTeam,
-      companyUsers
+      companyUsers,
+      corridors,
+      assignedVehicles,
+      assignedEquipment,
+      fuelLogs,
+      fuelSummary,
+      dispatchPassports,
+      crewRoster
     });
   } catch (err: any) {
     console.error(`[GET /api/tenant/project/:id] Error:`, err);
@@ -5502,6 +5681,773 @@ app.delete('/api/tenant/fleet-logs/:id', async (req, res) => {
     res.json({ message: 'Fleet log deleted', log: delRes.rows[0] });
   } catch (err: any) {
     console.error('[DELETE /api/tenant/fleet-logs/:id] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ====================================================================
+// 🏗️ STOCKYARDS & MATERIAL INVENTORY ENDPOINTS
+// ====================================================================
+
+// GET all Stockyards for a Tenant
+app.get('/api/tenant/stockyards', async (req, res) => {
+  try {
+    const firebaseUid = (req.query as any).firebaseUid || (req.query as any).uid;
+    let tenantId = 1;
+    if (firebaseUid) {
+      const aRes = await pool.query('SELECT tenant_id FROM tenant_admins WHERE firebase_uid = $1', [firebaseUid]);
+      if (aRes.rows.length > 0) tenantId = aRes.rows[0].tenant_id;
+      else {
+        const uRes = await pool.query('SELECT tenant_id FROM tenant_users WHERE firebase_uid = $1', [firebaseUid]);
+        if (uRes.rows.length > 0) tenantId = uRes.rows[0].tenant_id;
+      }
+    }
+
+    const yardsRes = await pool.query(`
+      SELECT 
+        y.id,
+        y.tenant_id as "tenantId",
+        y.yard_code as "yardCode",
+        y.yard_name as "yardName",
+        y.worksite_id as "worksiteId",
+        y.worksite_name as "worksiteName",
+        y.total_capacity_tons as "totalCapacityTons",
+        COALESCE(SUM(p.current_quantity), y.current_occupancy_tons, 0) as "currentOccupancyTons",
+        COUNT(p.id) as "pilesCount",
+        y.location,
+        y.latitude,
+        y.longitude,
+        y.supervisor_name as "supervisorName",
+        y.supervisor_phone as "supervisorPhone",
+        y.weighbridge_installed as "weighbridgeInstalled",
+        y.weighbridge_capacity_tons as "weighbridgeCapacityTons",
+        y.status,
+        y.notes,
+        y.created_at as "createdAt"
+      FROM tenant_stockyards y
+      LEFT JOIN tenant_stockyard_piles p ON y.id = p.stockyard_id
+      WHERE y.tenant_id = $1
+      GROUP BY y.id
+      ORDER BY y.id ASC
+    `, [tenantId]);
+
+    res.json(yardsRes.rows);
+  } catch (err: any) {
+    console.error('[GET /api/tenant/stockyards] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST Create Stockyard
+app.post('/api/tenant/stockyards', async (req, res) => {
+  try {
+    const {
+      firebaseUid, yardCode, yardName, worksiteId, worksiteName,
+      totalCapacityTons, location, latitude, longitude,
+      supervisorName, supervisorPhone, weighbridgeInstalled,
+      weighbridgeCapacityTons, notes
+    } = req.body;
+
+    let tenantId = 1;
+    if (firebaseUid) {
+      const aRes = await pool.query('SELECT tenant_id FROM tenant_admins WHERE firebase_uid = $1', [firebaseUid]);
+      if (aRes.rows.length > 0) tenantId = aRes.rows[0].tenant_id;
+    }
+
+    const insertRes = await pool.query(`
+      INSERT INTO tenant_stockyards (
+        tenant_id, yard_code, yard_name, worksite_id, worksite_name,
+        total_capacity_tons, location, latitude, longitude,
+        supervisor_name, supervisor_phone, weighbridge_installed,
+        weighbridge_capacity_tons, notes
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      RETURNING id, yard_code as "yardCode", yard_name as "yardName", location, total_capacity_tons as "totalCapacityTons"
+    `, [
+      tenantId, yardCode || `SY-${Date.now().toString().slice(-4)}`,
+      yardName, worksiteId || null, worksiteName || null,
+      totalCapacityTons || 50000, location || '', latitude || null, longitude || null,
+      supervisorName || '', supervisorPhone || '',
+      weighbridgeInstalled !== undefined ? weighbridgeInstalled : true,
+      weighbridgeCapacityTons || 100, notes || ''
+    ]);
+
+    res.status(201).json(insertRes.rows[0]);
+  } catch (err: any) {
+    console.error('[POST /api/tenant/stockyards] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE Stockyard
+app.delete('/api/tenant/stockyards/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const delRes = await pool.query('DELETE FROM tenant_stockyards WHERE id = $1 RETURNING *', [id]);
+    if (delRes.rows.length === 0) return res.status(404).json({ error: 'Stockyard not found' });
+    res.json({ message: 'Stockyard deleted successfully', yard: delRes.rows[0] });
+  } catch (err: any) {
+    console.error('[DELETE /api/tenant/stockyards/:id] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET Piles for a Stockyard
+app.get('/api/tenant/stockyards/:id/piles', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const pilesRes = await pool.query(`
+      SELECT 
+        id,
+        tenant_id as "tenantId",
+        stockyard_id as "stockyardId",
+        bay_number as "bayNumber",
+        material_name as "materialName",
+        grade,
+        unit_of_measure as "unitOfMeasure",
+        current_quantity as "currentQuantity",
+        min_threshold_quantity as "minThresholdQuantity",
+        max_capacity as "maxCapacity",
+        density_factor as "densityFactor",
+        color_code as "colorCode",
+        status,
+        created_at as "createdAt"
+      FROM tenant_stockyard_piles
+      WHERE stockyard_id = $1
+      ORDER BY bay_number ASC, id ASC
+    `, [id]);
+
+    res.json(pilesRes.rows);
+  } catch (err: any) {
+    console.error('[GET /api/tenant/stockyards/:id/piles] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST Add Material Pile to Stockyard
+app.post('/api/tenant/stockyards/:id/piles', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      bayNumber, materialName, grade, unitOfMeasure,
+      currentQuantity, minThresholdQuantity, maxCapacity,
+      densityFactor, colorCode
+    } = req.body;
+
+    const yardRes = await pool.query('SELECT tenant_id FROM tenant_stockyards WHERE id = $1', [id]);
+    if (yardRes.rows.length === 0) return res.status(404).json({ error: 'Stockyard not found' });
+    const tenantId = yardRes.rows[0].tenant_id;
+
+    const insertRes = await pool.query(`
+      INSERT INTO tenant_stockyard_piles (
+        tenant_id, stockyard_id, bay_number, material_name, grade,
+        unit_of_measure, current_quantity, min_threshold_quantity,
+        max_capacity, density_factor, color_code
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      RETURNING id, bay_number as "bayNumber", material_name as "materialName", current_quantity as "currentQuantity"
+    `, [
+      tenantId, id, bayNumber || 'Bay-1', materialName, grade || '',
+      unitOfMeasure || 'MT', currentQuantity || 0, minThresholdQuantity || 500,
+      maxCapacity || 20000, densityFactor || 1.6, colorCode || '#00705a'
+    ]);
+
+    res.status(201).json(insertRes.rows[0]);
+  } catch (err: any) {
+    console.error('[POST /api/tenant/stockyards/:id/piles] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE Pile
+app.delete('/api/tenant/stockyards/piles/:pileId', async (req, res) => {
+  try {
+    const { pileId } = req.params;
+    const delRes = await pool.query('DELETE FROM tenant_stockyard_piles WHERE id = $1 RETURNING *', [pileId]);
+    if (delRes.rows.length === 0) return res.status(404).json({ error: 'Pile not found' });
+    res.json({ message: 'Pile deleted successfully' });
+  } catch (err: any) {
+    console.error('[DELETE /api/tenant/stockyards/piles/:pileId] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET Stockyard Transactions (Inward / Outward ledger)
+app.get('/api/tenant/stockyard-transactions', async (req, res) => {
+  try {
+    const { projectId, stockyardId } = req.query;
+    let query = `
+      SELECT 
+        t.id,
+        t.tenant_id as "tenantId",
+        t.stockyard_id as "stockyardId",
+        y.yard_name as "yardName",
+        y.yard_code as "yardCode",
+        t.pile_id as "pileId",
+        p.material_name as "materialName",
+        p.grade,
+        t.transaction_type as "transactionType",
+        t.quantity,
+        t.project_id as "projectId",
+        t.project_name as "projectName",
+        t.vehicle_number as "vehicleNumber",
+        t.driver_name as "driverName",
+        t.driver_phone as "driverPhone",
+        t.waybill_number as "waybillNumber",
+        t.weighbridge_slip_number as "weighbridgeSlipNumber",
+        t.gross_weight as "grossWeight",
+        t.tare_weight as "tareWeight",
+        t.net_weight as "netWeight",
+        t.remarks,
+        t.created_at as "createdAt"
+      FROM tenant_stockyard_transactions t
+      LEFT JOIN tenant_stockyards y ON t.stockyard_id = y.id
+      LEFT JOIN tenant_stockyard_piles p ON t.pile_id = p.id
+      WHERE 1=1
+    `;
+    const params: any[] = [];
+    if (projectId) {
+      params.push(projectId);
+      query += ` AND (t.project_id = $${params.length} OR t.project_name ILIKE $${params.length})`;
+    }
+    if (stockyardId) {
+      params.push(stockyardId);
+      query += ` AND t.stockyard_id = $${params.length}`;
+    }
+    query += ' ORDER BY t.created_at DESC LIMIT 150';
+
+    const txRes = await pool.query(query, params);
+    res.json(txRes.rows);
+  } catch (err: any) {
+    console.error('[GET /api/tenant/stockyard-transactions] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ====================================================================
+// 🗺️ OPERATIONS CORRIDORS & SKETCH BLUEPRINTS
+// ====================================================================
+
+// GET all Operations Corridors
+app.get('/api/tenant/operations-corridors', async (req, res) => {
+  try {
+    const { projectId } = req.query;
+    let query = `
+      SELECT 
+        c.id,
+        c.tenant_id as "tenantId",
+        c.corridor_code as "corridorCode",
+        c.name,
+        c.project_id as "projectId",
+        c.project_name as "projectName",
+        c.project_head as "projectHead",
+        c.site_manager as "siteManager",
+        c.topology_type as "topologyType",
+        c.description,
+        c.origin_summary as "originSummary",
+        c.destination_summary as "destinationSummary",
+        c.transshipment_hub as "transshipmentHub",
+        c.total_distance_km as "totalDistanceKm",
+        c.estimated_cycle_time_hours as "estimatedCycleTimeHours",
+        c.status,
+        c.created_at as "createdAt",
+        COUNT(DISTINCT l.id) as "legsCount",
+        COUNT(DISTINCT a.id) as "assetsCount"
+      FROM tenant_operations_corridors c
+      LEFT JOIN tenant_corridor_legs l ON c.id = l.corridor_id
+      LEFT JOIN tenant_corridor_assets a ON c.id = a.corridor_id
+      WHERE 1=1
+    `;
+    const params: any[] = [];
+    if (projectId) {
+      params.push(projectId);
+      query += ` AND (c.project_id = $${params.length} OR c.project_name ILIKE $${params.length})`;
+    }
+    query += ` GROUP BY c.id ORDER BY c.id DESC`;
+
+    const cRes = await pool.query(query, params);
+    res.json(cRes.rows);
+  } catch (err: any) {
+    console.error('[GET /api/tenant/operations-corridors] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET Single Corridor with all Legs and Assets
+app.get('/api/tenant/operations-corridors/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const cRes = await pool.query(`
+      SELECT 
+        id,
+        tenant_id as "tenantId",
+        corridor_code as "corridorCode",
+        name,
+        project_id as "projectId",
+        project_name as "projectName",
+        project_head as "projectHead",
+        site_manager as "siteManager",
+        topology_type as "topologyType",
+        description,
+        origin_summary as "originSummary",
+        destination_summary as "destinationSummary",
+        transshipment_hub as "transshipmentHub",
+        total_distance_km as "totalDistanceKm",
+        estimated_cycle_time_hours as "estimatedCycleTimeHours",
+        status,
+        created_at as "createdAt"
+      FROM tenant_operations_corridors
+      WHERE id = $1
+    `, [id]);
+
+    if (cRes.rows.length === 0) return res.status(404).json({ error: 'Corridor not found' });
+    const corridor = cRes.rows[0];
+
+    // Fetch Legs
+    const legsRes = await pool.query(`
+      SELECT 
+        id,
+        corridor_id as "corridorId",
+        leg_sequence as "legSequence",
+        leg_name as "legName",
+        origin_name as "originName",
+        origin_type as "originType",
+        destination_name as "destinationName",
+        destination_type as "destinationType",
+        transport_mode as "transportMode",
+        distance_km as "distanceKm",
+        estimated_tat_hours as "estimatedTatHours",
+        transshipment_required as "transshipmentRequired",
+        lead_transporter as "leadTransporter",
+        allowed_shrinkage_percent as "allowedShrinkagePercent",
+        notes
+      FROM tenant_corridor_legs
+      WHERE corridor_id = $1
+      ORDER BY leg_sequence ASC, id ASC
+    `, [id]);
+
+    // Fetch Assets bound to this corridor
+    const assetsRes = await pool.query(`
+      SELECT 
+        id,
+        corridor_id as "corridorId",
+        leg_id as "legId",
+        asset_type as "assetType",
+        asset_id as "assetId",
+        asset_number as "assetNumber",
+        asset_title as "assetTitle",
+        assigned_person_name as "assignedPersonName",
+        assigned_person_phone as "assignedPersonPhone",
+        assigned_person_role as "assignedPersonRole",
+        shift,
+        operating_status as "operatingStatus",
+        notes
+      FROM tenant_corridor_assets
+      WHERE corridor_id = $1
+      ORDER BY id ASC
+    `, [id]);
+
+    res.json({
+      ...corridor,
+      legs: legsRes.rows,
+      assets: assetsRes.rows
+    });
+  } catch (err: any) {
+    console.error('[GET /api/tenant/operations-corridors/:id] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST Create Operations Corridor Blueprint with Legs, Leadership & Fleet
+app.post('/api/tenant/operations-corridors', async (req, res) => {
+  try {
+    const {
+      firebaseUid, corridorCode, name, projectId, projectName,
+      projectHead, siteManager,
+      topologyType, description, originSummary, destinationSummary,
+      transshipmentHub, totalDistanceKm, estimatedCycleTimeHours,
+      legs, assets
+    } = req.body;
+
+    let tenantId = 1;
+    if (firebaseUid) {
+      const aRes = await pool.query('SELECT tenant_id FROM tenant_admins WHERE firebase_uid = $1', [firebaseUid]);
+      if (aRes.rows.length > 0) tenantId = aRes.rows[0].tenant_id;
+    }
+
+    const cInsert = await pool.query(`
+      INSERT INTO tenant_operations_corridors (
+        tenant_id, corridor_code, name, project_id, project_name,
+        project_head, site_manager,
+        topology_type, description, origin_summary, destination_summary,
+        transshipment_hub, total_distance_km, estimated_cycle_time_hours
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      RETURNING id, corridor_code as "corridorCode", name, project_id as "projectId", project_name as "projectName", project_head as "projectHead", site_manager as "siteManager"
+    `, [
+      tenantId, corridorCode || `CORR-${Date.now().toString().slice(-4)}`,
+      name, projectId, projectName || 'Infrastructure Project',
+      projectHead || '', siteManager || '',
+      topologyType || 'RELAY_MULTIMODAL', description || '',
+      originSummary || '', destinationSummary || '',
+      transshipmentHub || '', totalDistanceKm || 0, estimatedCycleTimeHours || 0
+    ]);
+
+    const newCorridorId = cInsert.rows[0].id;
+    const insertedLegIds: number[] = [];
+
+    // Insert Legs if provided
+    if (Array.isArray(legs) && legs.length > 0) {
+      for (let i = 0; i < legs.length; i++) {
+        const leg = legs[i];
+        const legRes = await pool.query(`
+          INSERT INTO tenant_corridor_legs (
+            tenant_id, corridor_id, leg_sequence, leg_name, origin_name,
+            origin_type, destination_name, destination_type, transport_mode,
+            distance_km, estimated_tat_hours, transshipment_required, lead_transporter
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+          RETURNING id
+        `, [
+          tenantId, newCorridorId, leg.legSequence || (i + 1),
+          leg.legName || `Leg ${i + 1}`, leg.originName,
+          leg.originType || 'Loading Pit', leg.destinationName,
+          leg.destinationType || 'Delivery Site', leg.transportMode || 'Road',
+          leg.distanceKm || 0, leg.estimatedTatHours || 0,
+          leg.transshipmentRequired !== undefined ? leg.transshipmentRequired : false,
+          leg.leadTransporter || ''
+        ]);
+        insertedLegIds.push(legRes.rows[0].id);
+      }
+    }
+
+    // Insert direct assigned fleet / heavy equipment if provided and link to project
+    if (Array.isArray(assets) && assets.length > 0) {
+      for (const asset of assets) {
+        const targetLegId = asset.legIndex !== undefined && insertedLegIds[asset.legIndex]
+          ? insertedLegIds[asset.legIndex]
+          : (insertedLegIds[0] || null);
+        await pool.query(`
+          INSERT INTO tenant_corridor_assets (
+            tenant_id, corridor_id, leg_id, asset_type, asset_id, asset_number, asset_title,
+            assigned_person_name, assigned_person_phone, assigned_person_role,
+            shift, operating_status, notes
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        `, [
+          tenantId, newCorridorId, targetLegId,
+          asset.assetType || 'vehicle', asset.assetId || asset.assetNumber,
+          asset.assetNumber, asset.assetTitle || '',
+          asset.assignedPersonName || '', asset.assignedPersonPhone || '',
+          asset.assignedPersonRole || 'Driver',
+          asset.shift || 'Day Shift', asset.operatingStatus || 'Running',
+          asset.notes || ''
+        ]);
+
+        // Link vehicle or heavy equipment to this project in master tables
+        try {
+          if (asset.assetType === 'vehicle') {
+            await pool.query(`
+              UPDATE tenant_vehicles 
+              SET assigned_project_id = $1, assigned_project_name = $2, 
+                  assigned_driver_name = COALESCE(NULLIF($3, ''), assigned_driver_name),
+                  assigned_driver_phone = COALESCE(NULLIF($4, ''), assigned_driver_phone),
+                  status = 'Active'
+              WHERE vehicle_number = $5 OR id::text = $6
+            `, [projectId, projectName, asset.assignedPersonName, asset.assignedPersonPhone, asset.assetNumber, asset.assetId]);
+          } else {
+            await pool.query(`
+              UPDATE tenant_heavy_equipment 
+              SET assigned_project_id = $1, assigned_project_name = $2,
+                  assigned_operator_name = COALESCE(NULLIF($3, ''), assigned_operator_name),
+                  assigned_operator_phone = COALESCE(NULLIF($4, ''), assigned_operator_phone),
+                  status = 'Active'
+              WHERE equipment_number = $5 OR id::text = $6
+            `, [projectId, projectName, asset.assignedPersonName, asset.assignedPersonPhone, asset.assetNumber, asset.assetId]);
+          }
+        } catch (fErr: any) {
+          console.warn('Could not update vehicle/equipment project assignment:', fErr.message);
+        }
+      }
+    }
+
+    // Optional: Synchronize new transport methods back to the Project & Linked Work Order
+    const { syncProjectTransportModes, transportModes } = req.body;
+    if (syncProjectTransportModes && transportModes && projectId) {
+      try {
+        const modesStr = Array.isArray(transportModes) ? transportModes.join(', ') : String(transportModes);
+        // 1. Update project other_data JSON or custom_fields
+        const prjCheck = await pool.query('SELECT other_data FROM tenant_projects WHERE project_id = $1 OR id::text = $1', [projectId]);
+        if (prjCheck.rows.length > 0) {
+          let od: any = {};
+          try {
+            if (typeof prjCheck.rows[0].other_data === 'string') od = JSON.parse(prjCheck.rows[0].other_data);
+            else if (prjCheck.rows[0].other_data && typeof prjCheck.rows[0].other_data === 'object') od = prjCheck.rows[0].other_data;
+          } catch (_) { od = {}; }
+          od.transportModes = modesStr;
+          await pool.query(
+            'UPDATE tenant_projects SET other_data = $1 WHERE project_id = $2 OR id::text = $2',
+            [JSON.stringify(od), projectId]
+          );
+        }
+        // 2. Also update linked work order if any
+        await pool.query(
+          'UPDATE tenant_work_orders SET transport_modes = $1, updated_at = CURRENT_TIMESTAMP WHERE project_id = $2',
+          [modesStr, projectId]
+        );
+      } catch (syncErr: any) {
+        console.warn('Could not sync transport modes to project:', syncErr.message);
+      }
+    }
+
+    res.status(201).json(cInsert.rows[0]);
+  } catch (err: any) {
+    console.error('[POST /api/tenant/operations-corridors] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST Bind Asset (Vehicle / Heavy Equipment) to a Corridor Leg
+app.post('/api/tenant/operations-corridors/:id/assets', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      legId, assetType, assetId, assetNumber, assetTitle,
+      assignedPersonName, assignedPersonPhone, assignedPersonRole,
+      shift, operatingStatus, notes
+    } = req.body;
+
+    const cRes = await pool.query('SELECT tenant_id, project_id, project_name FROM tenant_operations_corridors WHERE id = $1', [id]);
+    if (cRes.rows.length === 0) return res.status(404).json({ error: 'Corridor not found' });
+    const { tenant_id: tenantId, project_id: pId, project_name: pName } = cRes.rows[0];
+
+    const insertRes = await pool.query(`
+      INSERT INTO tenant_corridor_assets (
+        tenant_id, corridor_id, leg_id, asset_type, asset_id,
+        asset_number, asset_title, assigned_person_name, assigned_person_phone,
+        assigned_person_role, shift, operating_status, notes
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      RETURNING *
+    `, [
+      tenantId, id, legId || null, assetType || 'vehicle', assetId,
+      assetNumber, assetTitle || '', assignedPersonName || '',
+      assignedPersonPhone || '', assignedPersonRole || 'Driver',
+      shift || 'Day Shift', operatingStatus || 'Running', notes || ''
+    ]);
+
+    // Automatically link vehicle / equipment to this project in the master tables
+    if (assetType === 'vehicle') {
+      await pool.query(`
+        UPDATE tenant_vehicles 
+        SET assigned_project_id = $1, assigned_project_name = $2, assigned_driver_name = $3, assigned_driver_phone = $4, status = 'Active'
+        WHERE vehicle_number = $5 OR id::text = $6
+      `, [pId, pName, assignedPersonName, assignedPersonPhone, assetNumber, assetId]);
+    } else {
+      await pool.query(`
+        UPDATE tenant_heavy_equipment 
+        SET assigned_project_id = $1, assigned_project_name = $2, assigned_operator_name = $3, assigned_operator_phone = $4, status = 'Active'
+        WHERE equipment_number = $5 OR id::text = $6
+      `, [pId, pName, assignedPersonName, assignedPersonPhone, assetNumber, assetId]);
+    }
+
+    res.status(201).json(insertRes.rows[0]);
+  } catch (err: any) {
+    console.error('[POST /api/tenant/operations-corridors/:id/assets] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE Asset Binding
+app.delete('/api/tenant/operations-corridors/:id/assets/:assetBindId', async (req, res) => {
+  try {
+    const { assetBindId } = req.params;
+    const delRes = await pool.query('DELETE FROM tenant_corridor_assets WHERE id = $1 RETURNING *', [assetBindId]);
+    if (delRes.rows.length === 0) return res.status(404).json({ error: 'Asset assignment not found' });
+    res.json({ message: 'Asset unlinked from corridor successfully' });
+  } catch (err: any) {
+    console.error('[DELETE corridor asset] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE Corridor
+app.delete('/api/tenant/operations-corridors/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const delRes = await pool.query('DELETE FROM tenant_operations_corridors WHERE id = $1 RETURNING *', [id]);
+    if (delRes.rows.length === 0) return res.status(404).json({ error: 'Corridor not found' });
+    res.json({ message: 'Corridor blueprint deleted successfully' });
+  } catch (err: any) {
+    console.error('[DELETE /api/tenant/operations-corridors/:id] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ====================================================================
+// 📋 DIGITAL DISPATCH WAYBILLS & MATERIAL PASSPORTS
+// ====================================================================
+
+// GET Dispatch Waybills
+app.get('/api/tenant/dispatch-waybills', async (req, res) => {
+  try {
+    const { projectId, status } = req.query;
+    let query = `
+      SELECT 
+        w.id,
+        w.tenant_id as "tenantId",
+        w.waybill_number as "waybillNumber",
+        w.project_id as "projectId",
+        w.project_name as "projectName",
+        w.corridor_id as "corridorId",
+        w.corridor_name as "corridorName",
+        w.origin_yard_id as "originYardId",
+        w.origin_yard_name as "originYardName",
+        w.destination_yard_id as "destinationYardId",
+        w.destination_yard_name as "destinationYardName",
+        w.material_name as "materialName",
+        w.grade,
+        w.unit_of_measure as "unitOfMeasure",
+        w.tare_weight as "tareWeight",
+        w.gross_weight as "grossWeight",
+        w.net_weight as "netWeight",
+        w.vehicle_number as "vehicleNumber",
+        w.driver_name as "driverName",
+        w.driver_phone as "driverPhone",
+        w.transporter_name as "transporterName",
+        w.eway_bill_number as "ewayBillNumber",
+        w.status,
+        w.dispatched_at as "dispatchedAt",
+        w.delivered_at as "deliveredAt",
+        w.remarks
+      FROM tenant_dispatch_waybills w
+      WHERE 1=1
+    `;
+    const params: any[] = [];
+    if (projectId) {
+      params.push(projectId);
+      query += ` AND (w.project_id = $${params.length} OR w.project_name ILIKE $${params.length})`;
+    }
+    if (status && status !== 'All') {
+      params.push(status);
+      query += ` AND w.status = $${params.length}`;
+    }
+    query += ' ORDER BY w.dispatched_at DESC LIMIT 150';
+
+    const wRes = await pool.query(query, params);
+    res.json(wRes.rows);
+  } catch (err: any) {
+    console.error('[GET /api/tenant/dispatch-waybills] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST Create & Dispatch Waybill (Deducts stock from origin pile & logs outward tx)
+app.post('/api/tenant/dispatch-waybills', async (req, res) => {
+  try {
+    const {
+      firebaseUid, waybillNumber, projectId, projectName,
+      corridorId, corridorName, legId, originYardId, originYardName,
+      destinationYardId, destinationYardName, materialName, grade,
+      unitOfMeasure, tareWeight, grossWeight, netWeight,
+      vehicleNumber, driverName, driverPhone, transporterName,
+      ewayBillNumber, remarks, originPileId
+    } = req.body;
+
+    let tenantId = 1;
+    if (firebaseUid) {
+      const aRes = await pool.query('SELECT tenant_id FROM tenant_admins WHERE firebase_uid = $1', [firebaseUid]);
+      if (aRes.rows.length > 0) tenantId = aRes.rows[0].tenant_id;
+    }
+
+    const calculatedNet = netWeight || (parseFloat(grossWeight || 0) - parseFloat(tareWeight || 0)) || 0;
+    const wbNum = waybillNumber || `WB-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    const wInsert = await pool.query(`
+      INSERT INTO tenant_dispatch_waybills (
+        tenant_id, waybill_number, project_id, project_name,
+        corridor_id, corridor_name, leg_id, origin_yard_id, origin_yard_name,
+        destination_yard_id, destination_yard_name, material_name, grade,
+        unit_of_measure, tare_weight, gross_weight, net_weight,
+        vehicle_number, driver_name, driver_phone, transporter_name,
+        eway_bill_number, status, remarks
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, 'In-Transit', $23)
+      RETURNING *
+    `, [
+      tenantId, wbNum, projectId, projectName || 'Infrastructure Project',
+      corridorId || null, corridorName || '', legId || null,
+      originYardId || null, originYardName || '', destinationYardId || null,
+      destinationYardName || '', materialName, grade || '',
+      unitOfMeasure || 'MT', tareWeight || 0, grossWeight || 0, calculatedNet,
+      vehicleNumber, driverName, driverPhone || '', transporterName || '',
+      ewayBillNumber || '', remarks || ''
+    ]);
+
+    // If origin yard pile was identified, deduct stock and log outward movement
+    if (originYardId && originPileId) {
+      await pool.query(`
+        UPDATE tenant_stockyard_piles 
+        SET current_quantity = GREATEST(0, current_quantity - $1), updated_at = CURRENT_TIMESTAMP
+        WHERE id = $2
+      `, [calculatedNet, originPileId]);
+
+      await pool.query(`
+        INSERT INTO tenant_stockyard_transactions (
+          tenant_id, stockyard_id, pile_id, transaction_type, quantity,
+          project_id, project_name, vehicle_number, driver_name, driver_phone,
+          waybill_number, gross_weight, tare_weight, net_weight, remarks
+        ) VALUES ($1, $2, $3, 'OUTWARD', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      `, [
+        tenantId, originYardId, originPileId, calculatedNet,
+        projectId, projectName, vehicleNumber, driverName, driverPhone,
+        wbNum, grossWeight, tareWeight, calculatedNet, `Gate dispatch on ${vehicleNumber}`
+      ]);
+    }
+
+    res.status(201).json(wInsert.rows[0]);
+  } catch (err: any) {
+    console.error('[POST /api/tenant/dispatch-waybills] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH Confirm Waybill Delivery (Adds stock to destination pile & logs inward tx)
+app.patch('/api/tenant/dispatch-waybills/:id/deliver', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { destinationPileId, receivedWeight, remarks } = req.body;
+
+    const wRes = await pool.query('SELECT * FROM tenant_dispatch_waybills WHERE id = $1', [id]);
+    if (wRes.rows.length === 0) return res.status(404).json({ error: 'Waybill not found' });
+    const wb = wRes.rows[0];
+
+    const finalNet = receivedWeight || wb.net_weight;
+
+    const updateRes = await pool.query(`
+      UPDATE tenant_dispatch_waybills
+      SET status = 'Delivered', delivered_at = CURRENT_TIMESTAMP, remarks = COALESCE($1, remarks)
+      WHERE id = $2
+      RETURNING *
+    `, [remarks || 'Delivered & weighbridge verified', id]);
+
+    // If destination yard pile is given, add stock and log inward transaction
+    if (wb.destination_yard_id && destinationPileId) {
+      await pool.query(`
+        UPDATE tenant_stockyard_piles 
+        SET current_quantity = current_quantity + $1, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $2
+      `, [finalNet, destinationPileId]);
+
+      await pool.query(`
+        INSERT INTO tenant_stockyard_transactions (
+          tenant_id, stockyard_id, pile_id, transaction_type, quantity,
+          project_id, project_name, vehicle_number, driver_name, driver_phone,
+          waybill_number, net_weight, remarks
+        ) VALUES ($1, $2, $3, 'INWARD', $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      `, [
+        wb.tenant_id, wb.destination_yard_id, destinationPileId, finalNet,
+        wb.project_id, wb.project_name, wb.vehicle_number, wb.driver_name, wb.driver_phone,
+        wb.waybill_number, finalNet, `Delivered & stacked from ${wb.origin_yard_name || 'Dispatch Site'}`
+      ]);
+    }
+
+    res.json(updateRes.rows[0]);
+  } catch (err: any) {
+    console.error('[PATCH /api/tenant/dispatch-waybills/:id/deliver] Error:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -8620,6 +9566,277 @@ app.listen(Number(port), '0.0.0.0', async () => {
     ALTER TABLE tenant_vehicle_assignments ADD COLUMN IF NOT EXISTS helper_id VARCHAR(100);
   `);
   console.log('✅ Auto-created/verified tenant_vehicles & tenant_heavy_equipment tables on server startup');
+
+  // Auto-create Multi-Modal Operations Corridor & Stockyard Tables
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS tenant_stockyards (
+      id SERIAL PRIMARY KEY,
+      tenant_id INTEGER REFERENCES tenants(id) ON DELETE CASCADE,
+      yard_code VARCHAR(50) NOT NULL,
+      yard_name VARCHAR(255) NOT NULL,
+      worksite_id VARCHAR(100),
+      worksite_name VARCHAR(255),
+      total_capacity_tons NUMERIC(15,2) DEFAULT 50000,
+      current_occupancy_tons NUMERIC(15,2) DEFAULT 0,
+      location VARCHAR(255),
+      latitude NUMERIC(10,6),
+      longitude NUMERIC(10,6),
+      supervisor_name VARCHAR(150),
+      supervisor_phone VARCHAR(50),
+      weighbridge_installed BOOLEAN DEFAULT true,
+      weighbridge_capacity_tons NUMERIC(10,2) DEFAULT 100,
+      status VARCHAR(50) DEFAULT 'Active',
+      notes TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS tenant_stockyard_piles (
+      id SERIAL PRIMARY KEY,
+      tenant_id INTEGER REFERENCES tenants(id) ON DELETE CASCADE,
+      stockyard_id INTEGER REFERENCES tenant_stockyards(id) ON DELETE CASCADE,
+      bay_number VARCHAR(50) NOT NULL,
+      material_name VARCHAR(255) NOT NULL,
+      grade VARCHAR(100),
+      unit_of_measure VARCHAR(50) DEFAULT 'MT',
+      current_quantity NUMERIC(15,2) DEFAULT 0,
+      min_threshold_quantity NUMERIC(15,2) DEFAULT 500,
+      max_capacity NUMERIC(15,2) DEFAULT 20000,
+      density_factor NUMERIC(8,3) DEFAULT 1.6,
+      color_code VARCHAR(50) DEFAULT '#00705a',
+      status VARCHAR(50) DEFAULT 'Active',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS tenant_stockyard_transactions (
+      id SERIAL PRIMARY KEY,
+      tenant_id INTEGER REFERENCES tenants(id) ON DELETE CASCADE,
+      stockyard_id INTEGER REFERENCES tenant_stockyards(id) ON DELETE CASCADE,
+      pile_id INTEGER REFERENCES tenant_stockyard_piles(id) ON DELETE CASCADE,
+      transaction_type VARCHAR(20) NOT NULL,
+      quantity NUMERIC(15,2) NOT NULL,
+      project_id VARCHAR(100),
+      project_name VARCHAR(255),
+      vehicle_number VARCHAR(100),
+      driver_name VARCHAR(150),
+      driver_phone VARCHAR(50),
+      waybill_number VARCHAR(100),
+      weighbridge_slip_number VARCHAR(100),
+      gross_weight NUMERIC(12,2),
+      tare_weight NUMERIC(12,2),
+      net_weight NUMERIC(12,2),
+      remarks TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS tenant_operations_corridors (
+      id SERIAL PRIMARY KEY,
+      tenant_id INTEGER REFERENCES tenants(id) ON DELETE CASCADE,
+      corridor_code VARCHAR(50) NOT NULL,
+      name VARCHAR(255) NOT NULL,
+      project_id VARCHAR(100) NOT NULL,
+      project_name VARCHAR(255) NOT NULL,
+      topology_type VARCHAR(50) DEFAULT 'RELAY_MULTIMODAL',
+      description TEXT,
+      origin_summary VARCHAR(255),
+      destination_summary VARCHAR(255),
+      transshipment_hub VARCHAR(255),
+      total_distance_km NUMERIC(10,2) DEFAULT 0,
+      estimated_cycle_time_hours NUMERIC(8,2) DEFAULT 0,
+      status VARCHAR(50) DEFAULT 'Active',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS tenant_corridor_legs (
+      id SERIAL PRIMARY KEY,
+      tenant_id INTEGER REFERENCES tenants(id) ON DELETE CASCADE,
+      corridor_id INTEGER REFERENCES tenant_operations_corridors(id) ON DELETE CASCADE,
+      leg_sequence INTEGER NOT NULL,
+      leg_name VARCHAR(255) NOT NULL,
+      origin_name VARCHAR(255) NOT NULL,
+      origin_type VARCHAR(50) DEFAULT 'Loading Pit',
+      destination_name VARCHAR(255) NOT NULL,
+      destination_type VARCHAR(50) DEFAULT 'Transshipment Hub',
+      transport_mode VARCHAR(50) NOT NULL DEFAULT 'Road',
+      distance_km NUMERIC(10,2) DEFAULT 0,
+      estimated_tat_hours NUMERIC(6,2) DEFAULT 0,
+      transshipment_required BOOLEAN DEFAULT false,
+      lead_transporter VARCHAR(255),
+      allowed_shrinkage_percent NUMERIC(5,2) DEFAULT 1.5,
+      notes TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS tenant_corridor_assets (
+      id SERIAL PRIMARY KEY,
+      tenant_id INTEGER REFERENCES tenants(id) ON DELETE CASCADE,
+      corridor_id INTEGER REFERENCES tenant_operations_corridors(id) ON DELETE CASCADE,
+      leg_id INTEGER REFERENCES tenant_corridor_legs(id) ON DELETE CASCADE,
+      asset_type VARCHAR(50) NOT NULL,
+      asset_id VARCHAR(100) NOT NULL,
+      asset_number VARCHAR(100) NOT NULL,
+      asset_title VARCHAR(255),
+      assigned_person_name VARCHAR(150),
+      assigned_person_phone VARCHAR(50),
+      assigned_person_role VARCHAR(100) DEFAULT 'Driver',
+      shift VARCHAR(50) DEFAULT 'Day Shift',
+      operating_status VARCHAR(50) DEFAULT 'Running',
+      notes TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS tenant_dispatch_waybills (
+      id SERIAL PRIMARY KEY,
+      tenant_id INTEGER REFERENCES tenants(id) ON DELETE CASCADE,
+      waybill_number VARCHAR(100) UNIQUE NOT NULL,
+      project_id VARCHAR(100) NOT NULL,
+      project_name VARCHAR(255),
+      corridor_id INTEGER REFERENCES tenant_operations_corridors(id) ON DELETE SET NULL,
+      corridor_name VARCHAR(255),
+      leg_id INTEGER REFERENCES tenant_corridor_legs(id) ON DELETE SET NULL,
+      origin_yard_id INTEGER REFERENCES tenant_stockyards(id) ON DELETE SET NULL,
+      origin_yard_name VARCHAR(255),
+      destination_yard_id INTEGER REFERENCES tenant_stockyards(id) ON DELETE SET NULL,
+      destination_yard_name VARCHAR(255),
+      material_name VARCHAR(255) NOT NULL,
+      grade VARCHAR(100),
+      unit_of_measure VARCHAR(50) DEFAULT 'MT',
+      tare_weight NUMERIC(12,2) NOT NULL,
+      gross_weight NUMERIC(12,2) NOT NULL,
+      net_weight NUMERIC(12,2) NOT NULL,
+      vehicle_number VARCHAR(100) NOT NULL,
+      driver_name VARCHAR(150) NOT NULL,
+      driver_phone VARCHAR(50),
+      transporter_name VARCHAR(200),
+      eway_bill_number VARCHAR(100),
+      status VARCHAR(50) DEFAULT 'In-Transit',
+      dispatched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      delivered_at TIMESTAMP,
+      remarks TEXT
+    );
+
+    ALTER TABLE tenant_operations_corridors ADD COLUMN IF NOT EXISTS project_head VARCHAR(150);
+    ALTER TABLE tenant_operations_corridors ADD COLUMN IF NOT EXISTS site_manager VARCHAR(150);
+  `);
+  console.log('✅ Auto-created/verified Multi-Modal Operations Corridor & Stockyard tables');
+
+  // Seed default stockyards & corridors if empty
+  try {
+    const yardCountRes = await pool.query('SELECT COUNT(*) as count FROM tenant_stockyards');
+    if (parseInt(yardCountRes.rows[0]?.count || '0', 10) === 0) {
+      const y1 = await pool.query(`
+        INSERT INTO tenant_stockyards (tenant_id, yard_code, yard_name, worksite_id, worksite_name, total_capacity_tons, current_occupancy_tons, location, supervisor_name, supervisor_phone, weighbridge_installed, weighbridge_capacity_tons)
+        VALUES (1, 'SY-001', 'Singrauli Rail Siding & Central Stockyard', 'WKS-001', 'Noida Metro Line-8 Depot', 120000, 89900, 'Singrauli Rail Siding Hub', 'Devendra Rathore', '+91 98765 11223', true, 120)
+        RETURNING id;
+      `);
+      const yardId1 = y1.rows[0].id;
+
+      const y2 = await pool.query(`
+        INSERT INTO tenant_stockyards (tenant_id, yard_code, yard_name, worksite_id, worksite_name, total_capacity_tons, current_occupancy_tons, location, supervisor_name, supervisor_phone, weighbridge_installed, weighbridge_capacity_tons)
+        VALUES (1, 'SY-002', 'Noida Sector-62 Processing Stockyard', 'WKS-002', 'Sector 62 Metro Depot Yard', 65000, 46000, 'Sector 62 Industrial Block B', 'Vikram Chauhan', '+91 98234 44556', true, 100)
+        RETURNING id;
+      `);
+      const yardId2 = y2.rows[0].id;
+
+      const y3 = await pool.query(`
+        INSERT INTO tenant_stockyards (tenant_id, yard_code, yard_name, worksite_id, worksite_name, total_capacity_tons, current_occupancy_tons, location, supervisor_name, supervisor_phone, weighbridge_installed, weighbridge_capacity_tons)
+        VALUES (1, 'SY-003', 'Dankuni Multi-Modal Logistics Yard', 'WKS-003', 'Indirapuram Elevated Corridor', 150000, 113000, 'DFCC Freight Corridor Siding', 'Amitabha Roy', '+91 99112 88776', true, 150)
+        RETURNING id;
+      `);
+      const yardId3 = y3.rows[0].id;
+
+      // Piles for Yard 1
+      const p1 = await pool.query(`
+        INSERT INTO tenant_stockyard_piles (tenant_id, stockyard_id, bay_number, material_name, grade, unit_of_measure, current_quantity, min_threshold_quantity, max_capacity, color_code)
+        VALUES (1, $1, 'Bay-A1', 'Track Ballast 40mm', 'RDSO Class-A', 'MT', 42500, 8000, 50000, '#00705a')
+        RETURNING id;
+      `, [yardId1]);
+      await pool.query(`
+        INSERT INTO tenant_stockyard_piles (tenant_id, stockyard_id, bay_number, material_name, grade, unit_of_measure, current_quantity, min_threshold_quantity, max_capacity, color_code)
+        VALUES 
+          (1, $1, 'Bay-A2', 'Crushed Granite 20mm', 'Agg Grade-1', 'MT', 28000, 5000, 35000, '#0284c7'),
+          (1, $1, 'Bay-B1', 'M-Sand (Zone II)', 'IS:383 Concrete Grade', 'MT', 19400, 4000, 25000, '#d97706');
+      `, [yardId1]);
+
+      // Piles for Yard 2
+      await pool.query(`
+        INSERT INTO tenant_stockyard_piles (tenant_id, stockyard_id, bay_number, material_name, grade, unit_of_measure, current_quantity, min_threshold_quantity, max_capacity, color_code)
+        VALUES 
+          (1, $1, 'Bay-C1', 'Granular Sub-Base (GSB)', 'MORTH Spec 401', 'MT', 31200, 6000, 40000, '#4f46e5'),
+          (1, $1, 'Bay-C2', 'Ready-Mix Aggregates 10mm', 'IS Grade-2', 'MT', 14800, 3000, 20000, '#059669');
+      `, [yardId2]);
+
+      // Piles for Yard 3
+      await pool.query(`
+        INSERT INTO tenant_stockyard_piles (tenant_id, stockyard_id, bay_number, material_name, grade, unit_of_measure, current_quantity, min_threshold_quantity, max_capacity, color_code)
+        VALUES 
+          (1, $1, 'Siding Bay-1', 'Thermal Coal (G11 Grade)', '5200 Kcal/kg', 'MT', 68000, 15000, 80000, '#334155'),
+          (1, $1, 'Siding Bay-2', 'Iron Ore Fines Fe 62%', 'Pellet Feed', 'MT', 45000, 10000, 60000, '#dc2626');
+      `, [yardId3]);
+
+      // Seed Operations Corridor 1
+      const c1 = await pool.query(`
+        INSERT INTO tenant_operations_corridors (tenant_id, corridor_code, name, project_id, project_name, topology_type, description, origin_summary, destination_summary, transshipment_hub, total_distance_km, estimated_cycle_time_hours)
+        VALUES (1, 'CORR-DMRC-01', 'Western DFCC Rail-to-Road Metro Siding Corridor', 'PRJ-001', 'Delhi Metro Rail Project (Phase IV)', 'RELAY_MULTIMODAL', 'Quarry Pit 1 ➔ Road Tipper ➔ Satna Siding Buffer ➔ DFCC Rail Rake ➔ Tughlakabad Depot ➔ Road Truck ➔ Noida Sector-62 Depot', 'Rewa Quarry Face (Loading Pit)', 'Noida Sector-62 Depot (Site)', 'Satna Siding & Tughlakabad Inland Depot', 752.7, 22.0)
+        RETURNING id;
+      `);
+      const corrId1 = c1.rows[0].id;
+
+      // Legs for Corridor 1
+      const l1 = await pool.query(`
+        INSERT INTO tenant_corridor_legs (tenant_id, corridor_id, leg_sequence, leg_name, origin_name, origin_type, destination_name, destination_type, transport_mode, distance_km, estimated_tat_hours, transshipment_required, lead_transporter)
+        VALUES (1, $1, 1, 'Leg 1: Pit Haulage to Rail Siding', 'Rewa Quarry Face (Loading Pit)', 'Loading Pit', 'Satna Rail Siding Yard', 'Transshipment Hub', 'Road', 48.5, 2.5, true, 'Rewa Earthmovers & Haulage Ltd.')
+        RETURNING id;
+      `, [corrId1]);
+      const legId1 = l1.rows[0].id;
+
+      const l2 = await pool.query(`
+        INSERT INTO tenant_corridor_legs (tenant_id, corridor_id, leg_sequence, leg_name, origin_name, origin_type, destination_name, destination_type, transport_mode, distance_km, estimated_tat_hours, transshipment_required, lead_transporter)
+        VALUES (1, $1, 2, 'Leg 2: Dedicated DFCC Rail Freight', 'Satna Rail Siding Yard', 'Rail Siding', 'Tughlakabad Inland Depot', 'Transshipment Hub', 'Rail', 680.0, 18.0, true, 'Indian Railways / Dedicated Freight Corridor')
+        RETURNING id;
+      `, [corrId1]);
+      const legId2 = l2.rows[0].id;
+
+      const l3 = await pool.query(`
+        INSERT INTO tenant_corridor_legs (tenant_id, corridor_id, leg_sequence, leg_name, origin_name, origin_type, destination_name, destination_type, transport_mode, distance_km, estimated_tat_hours, transshipment_required, lead_transporter)
+        VALUES (1, $1, 3, 'Leg 3: Last-Mile Metro Site Delivery', 'Tughlakabad Inland Depot', 'Transshipment Hub', 'Noida Sector-62 Metro Depot Site', 'Delivery Site', 'Road', 24.2, 1.5, false, 'InfraOps Logistics Fleet')
+        RETURNING id;
+      `, [corrId1]);
+      const legId3 = l3.rows[0].id;
+
+      // Bind assets to legs
+      await pool.query(`
+        INSERT INTO tenant_corridor_assets (tenant_id, corridor_id, leg_id, asset_type, asset_id, asset_number, asset_title, assigned_person_name, assigned_person_phone, assigned_person_role, shift, operating_status)
+        VALUES 
+          (1, $1, $2, 'vehicle', 'VEH-001', 'UP-14-BT-9021', 'Tata Prima 2830.K 16 CUM Tipper', 'Rajesh Kumar', '+91 98765 43210', 'Primary Driver', 'Day Shift', 'Running'),
+          (1, $1, $2, 'heavy_equipment', 'EQP-001', 'EXC-210-CAT', 'CAT 320D2 Hydraulic Excavator', 'Ramesh Yadav', '+91 98112 33445', 'Equipment Operator', 'Day Shift', 'Loading'),
+          (1, $1, $3, 'heavy_equipment', 'EQP-002', 'CRN-801-GNT', 'Gantry Rail Container Stacker 45T', 'Manoj Verma', '+91 98334 55667', 'Master Crane Operator', 'Rotational Shift', 'Running'),
+          (1, $1, $4, 'vehicle', 'VEH-002', 'DL-1M-4412', 'Ashok Leyland 4220 14-Wheeler Hauler', 'Gurpreet Singh', '+91 98100 77889', 'Commercial Pilot', 'Day Shift', 'En Route');
+      `, [corrId1, legId1, legId2, legId3]);
+
+      // Seed Waybills
+      await pool.query(`
+        INSERT INTO tenant_dispatch_waybills (tenant_id, waybill_number, project_id, project_name, corridor_id, corridor_name, leg_id, origin_yard_id, origin_yard_name, destination_yard_id, destination_yard_name, material_name, grade, tare_weight, gross_weight, net_weight, vehicle_number, driver_name, driver_phone, transporter_name, status, remarks)
+        VALUES 
+          (1, 'WB-2026-1001', 'PRJ-001', 'Delhi Metro Rail Project (Phase IV)', $1, 'Western DFCC Rail-to-Road Metro Siding Corridor', $2, $4, 'Singrauli Rail Siding & Central Stockyard', $5, 'Noida Sector-62 Processing Stockyard', 'Track Ballast 40mm', 'RDSO Class-A', 17.2, 52.4, 35.2, 'UP-14-BT-9021', 'Rajesh Kumar', '+91 98765 43210', 'Rewa Earthmovers', 'In-Transit', 'High priority metro ballast batch. Scheduled delivery today 16:00 hrs.'),
+          (1, 'WB-2026-1002', 'PRJ-001', 'Delhi Metro Rail Project (Phase IV)', $1, 'Western DFCC Rail-to-Road Metro Siding Corridor', $3, $5, 'Noida Sector-62 Processing Stockyard', $4, 'Singrauli Rail Siding & Central Stockyard', 'Crushed Granite 20mm', 'Agg Grade-1', 16.8, 48.6, 31.8, 'DL-1M-4412', 'Gurpreet Singh', '+91 98100 77889', 'InfraOps Fleet', 'Delivered', 'Delivered to Metro Casting Yard. Weighbridge verified.');
+      `, [corrId1, legId1, legId3, yardId1, yardId2]);
+
+      // Seed Transactions
+      await pool.query(`
+        INSERT INTO tenant_stockyard_transactions (tenant_id, stockyard_id, pile_id, transaction_type, quantity, project_id, project_name, vehicle_number, driver_name, driver_phone, waybill_number, weighbridge_slip_number, gross_weight, tare_weight, net_weight, remarks)
+        VALUES 
+          (1, $1, $2, 'OUTWARD', 35.2, 'PRJ-001', 'Delhi Metro Rail Project (Phase IV)', 'UP-14-BT-9021', 'Rajesh Kumar', '+91 98765 43210', 'WB-2026-1001', 'WB-SLIP-8901', 52.4, 17.2, 35.2, 'Dispatched via Siding Road Leg 1'),
+          (1, $3, $4, 'INWARD', 31.8, 'PRJ-001', 'Delhi Metro Rail Project (Phase IV)', 'DL-1M-4412', 'Gurpreet Singh', '+91 98100 77889', 'WB-2026-1002', 'WB-SLIP-8902', 48.6, 16.8, 31.8, 'Received & stacked in Bay-C1');
+      `, [yardId1, p1.rows[0].id, yardId2, p1.rows[0].id]);
+
+      console.log('✅ Seeded default Stockyards, Multi-Modal Corridors, Legs, Asset Bindings, and Waybills');
+    }
+  } catch (seedErr: any) {
+    console.warn('Notice during stockyard seeding:', seedErr.message);
+  }
   try {
     const vendorCheck = await pool.query('SELECT COUNT(*) as count FROM tenant_vendors');
     if (parseInt(vendorCheck.rows[0]?.count || '0', 10) === 0) {

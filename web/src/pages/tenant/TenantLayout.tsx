@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { Home, Users, Building2, Box, Wrench, UserCheck, Briefcase, Network, Wallet, User, Settings, Search, Bell, Menu, X, LogOut, ChevronRight, ChevronLeft, MapPin, Shield, UserCog, Layers, DollarSign, ShoppingCart, Clipboard, ClipboardList, TrendingUp, Clock, Plus, FolderPlus, Truck, Gauge } from 'lucide-react';
+import { Home, Users, Building2, Box, Wrench, UserCheck, Briefcase, Network, Wallet, User, Settings, Search, Bell, Menu, X, LogOut, ChevronRight, ChevronLeft, MapPin, Shield, UserCog, Layers, DollarSign, ShoppingCart, Clipboard, ClipboardList, TrendingUp, Clock, Plus, FolderPlus, Truck, Gauge, Route, Scale } from 'lucide-react';
 import sideIconImg from '../../assets/Side Icon.png';
 import { useAuth } from '../../context/AuthContext';
 import { signOut } from 'firebase/auth';
@@ -169,6 +169,16 @@ export default function TenantLayout() {
       }
     ] : []),
     { name: 'Work Orders', path: '/tenant/work-orders', icon: ClipboardList },
+    {
+      name: 'Operations & Stockyard',
+      icon: Route,
+      isCollapsible: true,
+      subItems: [
+        { name: 'Stockyard & Materials', path: '/tenant/stockyard', icon: Layers },
+        { name: 'Operations Corridors & Sketch', path: '/tenant/operations-corridors', icon: Route },
+        { name: 'Dispatch Waybills & Slips', path: '/tenant/dispatch-waybills', icon: Scale },
+      ]
+    },
     {
       name: 'Fleet & Logistics',
       icon: Truck,

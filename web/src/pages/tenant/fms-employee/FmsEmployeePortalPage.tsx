@@ -6,7 +6,8 @@ import {
   Activity, Zap, ShieldCheck, Search, Filter, Layers, ExternalLink, Info, CheckCircle,
   Maximize2, Minimize2, Radio, Compass, Wifi, Eye, Plus, ArrowUpRight, Wrench,
   TrendingUp, AlertCircle, BarChart3, Sliders, ChevronDown,
-  Train, PackageCheck, ArrowDownToLine, Milestone, Route, ArrowRightLeft, Box
+  Train, PackageCheck, ArrowDownToLine, Milestone, Route, ArrowRightLeft, Box,
+  CircleDollarSign, Cog
 } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
 import { apiFetch } from '../../../lib/api';
@@ -242,7 +243,11 @@ export default function FmsEmployeePortalPage() {
     fuelBillNumber: '',
     paymentMode: 'Fleet Diesel Card',
     tollAmount: '',
-    fastagDeduction: '',
+    tollReceipt: '',
+    repairCost: '',
+    repairDetails: '',
+    sparePartCost: '',
+    sparePartDetails: '',
     otherExpenses: '',
     otherExpenseNotes: '',
     remarks: ''
@@ -818,8 +823,11 @@ export default function FmsEmployeePortalPage() {
       const rate = parseFloat(shiftForm.fuelRatePerLiter) || 94.50;
       const fuelCost = liters * rate;
       const tollPaid = parseFloat(shiftForm.tollAmount) || 0;
-      const fastagPaid = parseFloat(shiftForm.fastagDeduction) || 0;
-      const otherExp = parseFloat(shiftForm.otherExpenses) || 0;
+      const repairCost = parseFloat(shiftForm.repairCost) || 0;
+      const sparePartCost = parseFloat(shiftForm.sparePartCost) || 0;
+      const miscExp = parseFloat(shiftForm.otherExpenses) || 0;
+      const totalIncidental = repairCost + sparePartCost + miscExp;
+      const totalShiftExpenses = fuelCost + tollPaid + totalIncidental;
 
       // Calculated fuel efficiency
       let efficiencyVal: number | undefined;
@@ -833,6 +841,18 @@ export default function FmsEmployeePortalPage() {
           efficiencyVal = parseFloat((distKm / liters).toFixed(2));
         }
       }
+
+      const expenseBreakdown = [
+        tollPaid > 0 ? `Toll: ₹${tollPaid}${shiftForm.tollReceipt ? ` (${shiftForm.tollReceipt})` : ''}` : '',
+        repairCost > 0 ? `Repair: ₹${repairCost}${shiftForm.repairDetails ? ` (${shiftForm.repairDetails})` : ''}` : '',
+        sparePartCost > 0 ? `Spares: ₹${sparePartCost}${shiftForm.sparePartDetails ? ` (${shiftForm.sparePartDetails})` : ''}` : '',
+        miscExp > 0 ? `Misc: ₹${miscExp}` : ''
+      ].filter(Boolean).join(' | ');
+
+      const combinedRemarks = [
+        shiftForm.remarks,
+        expenseBreakdown ? `[Incidentals: ${expenseBreakdown}]` : ''
+      ].filter(Boolean).join(' · ');
 
       const payload = {
         tenantId: currentUser?.uid || 'demo-tenant',
@@ -865,10 +885,10 @@ export default function FmsEmployeePortalPage() {
         fuelEfficiency: efficiencyVal,
         fuelEfficiencyUnit: efficiencyUnit,
         tollAmount: tollPaid,
-        fastagDeduction: fastagPaid,
-        otherExpenses: otherExp,
+        fastagDeduction: tollPaid,
+        otherExpenses: totalIncidental,
         tripsCount: parseInt(shiftForm.tripsCount, 10) || 1,
-        remarks: shiftForm.remarks
+        remarks: combinedRemarks
       };
 
       // Realtime update in-memory telemetry so UI immediately reflects latest shift data
@@ -895,7 +915,7 @@ export default function FmsEmployeePortalPage() {
             currentEngineHours: isEq ? endHrs : v.currentEngineHours,
             engineHoursToday: isEq ? runHrs : v.engineHoursToday,
             fuelType: shiftForm.fuelType || v.fuelType,
-            costToday: v.costToday + fuelCost,
+            costToday: v.costToday + totalShiftExpenses,
             efficiencyKmL: efficiencyVal ? efficiencyVal : v.efficiencyKmL,
             efficiencyUnit: efficiencyUnit,
             fuelStops: newStops
@@ -1282,12 +1302,18 @@ export default function FmsEmployeePortalPage() {
                       </div>
                     </div>
 
-                    {/* Row 2: Site & Driver */}
+                    {/* Row 2: Project, Corridor Route, Site & Driver */}
                     <div className="text-[11px] space-y-1 text-slate-600 bg-slate-50/70 p-2 rounded-lg border border-slate-100/80">
                       <div className="flex items-center gap-1.5 truncate">
-                        <span className="text-slate-400 font-medium shrink-0">Site:</span>
-                        <span className="font-semibold text-slate-800 truncate" title={v.worksiteName || v.liveLocation}>
-                          {v.worksiteName || v.liveLocation || 'Project Worksite'}
+                        <span className="text-slate-400 font-medium shrink-0">Project:</span>
+                        <span className="font-semibold text-indigo-700 truncate" title={v.projectName}>
+                          {v.projectName || 'Infrastructure Package'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 truncate">
+                        <span className="text-slate-400 font-medium shrink-0">Route:</span>
+                        <span className="font-semibold text-[#00705a] truncate" title={`${v.origin || 'Pit Face'} ➔ ${v.destination || 'Site Depot'}`}>
+                          {v.origin && v.destination ? `${v.origin} ➔ ${v.destination}` : (v.worksiteName || 'Corridor Route Leg')}
                         </span>
                       </div>
                       <div className="flex items-center gap-1.5 truncate">
@@ -2822,7 +2848,7 @@ export default function FmsEmployeePortalPage() {
           MODAL: SHIFT LOG & FUEL BILL ENTRY FORM
           ────────────────────────────────────────────────────────────────────────── */}
       {isLogModalOpen && activeAssetForLog && (() => {
-        const isModalEq = shiftForm.assetCategory === 'equipment' || activeAssetForLog.assetCategory === 'equipment';
+        const isModalEq = activeAssetForLog.assetCategory === 'equipment';
         const mStartOdo = parseFloat(shiftForm.startOdometer) || 0;
         const mEndOdo = parseFloat(shiftForm.endOdometer) || 0;
         const mDistKm = Math.max(0, mEndOdo - mStartOdo);
@@ -2834,6 +2860,13 @@ export default function FmsEmployeePortalPage() {
         const mLiters = parseFloat(shiftForm.fuelFilledLiters) || 0;
         const mRate = parseFloat(shiftForm.fuelRatePerLiter) || 0;
         const mFuelCost = Math.round(mLiters * mRate);
+
+        const mTollCost = parseFloat(shiftForm.tollAmount) || 0;
+        const mRepairCost = parseFloat(shiftForm.repairCost) || 0;
+        const mPartCost = parseFloat(shiftForm.sparePartCost) || 0;
+        const mMiscCost = parseFloat(shiftForm.otherExpenses) || 0;
+        const mTotalIncidental = mRepairCost + mPartCost + mMiscCost;
+        const mTotalExpenses = mFuelCost + mTollCost + mTotalIncidental;
 
         let mAvgEfficiency: string | null = null;
         if (isModalEq) {
@@ -2848,29 +2881,29 @@ export default function FmsEmployeePortalPage() {
 
         return (
           <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-            <div className="bg-white rounded-2xl max-w-3xl w-full border border-slate-200 shadow-2xl p-5 sm:p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150 max-h-[92vh] overflow-y-auto">
+            <div className="bg-white rounded-2xl max-w-2xl w-full border border-slate-200 shadow-2xl p-4 sm:p-5 space-y-3 animate-in fade-in zoom-in-95 duration-150 max-h-[94vh] overflow-y-auto">
 
-              {/* Header with Machine Details & Operational Mode Pill */}
-              <div className="flex items-start justify-between pb-3 border-b border-slate-100 gap-3">
-                <div className="flex items-center gap-3">
-                  <div className={`h-10 w-10 rounded-xl flex items-center justify-center font-bold ${isModalEq ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
-                    }`}>
-                    {isModalEq ? <HardHat size={22} /> : <Truck size={22} />}
+              {/* 1. Header & Quick Machine Summary */}
+              <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
+                <div className="flex items-center gap-2.5">
+                  <div className={`h-9 w-9 rounded-xl flex items-center justify-center font-bold ${
+                    isModalEq ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-[#00705a]'
+                  }`}>
+                    {isModalEq ? <HardHat size={18} /> : <Truck size={18} />}
                   </div>
                   <div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="font-extrabold text-base text-slate-900 tracking-tight">
-                        Record Shift Run / Diesel Bill · {activeAssetForLog.plate}
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-extrabold text-sm text-slate-900 tracking-tight">
+                        {activeAssetForLog.plate} · {isModalEq ? 'Equipment Shift & Fuel Slip' : 'Vehicle Shift & Fuel Slip'}
                       </h3>
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${isModalEq
-                        ? 'bg-amber-50 text-amber-800 border-amber-300'
-                        : 'bg-emerald-50 text-[#00705a] border-emerald-300'
-                        }`}>
-                        {isModalEq ? '🚜 Heavy Machinery Mode (HMR · Hours)' : '🚚 Commercial Vehicle Mode (KM · Mileage)'}
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                        isModalEq ? 'bg-amber-50 text-amber-800 border border-amber-200' : 'bg-emerald-50 text-[#00705a] border border-emerald-200'
+                      }`}>
+                        {isModalEq ? 'HMR (Hours)' : 'Odometer (KM)'}
                       </span>
                     </div>
-                    <p className="text-[11.5px] text-slate-500 mt-0.5">
-                      {activeAssetForLog.model} · {activeAssetForLog.type} · Base: {activeAssetForLog.siteDepot}
+                    <p className="text-[11px] text-slate-500">
+                      {activeAssetForLog.model} · Driver: <strong className="text-slate-700">{activeAssetForLog.driverName || 'Assigned Driver'}</strong> · Site: {activeAssetForLog.worksiteName || activeAssetForLog.siteDepot || 'Depot'}
                     </p>
                   </div>
                 </div>
@@ -2878,543 +2911,313 @@ export default function FmsEmployeePortalPage() {
                 <button
                   type="button"
                   onClick={() => setIsLogModalOpen(false)}
-                  className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 cursor-pointer shrink-0"
+                  className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 cursor-pointer"
                 >
                   <X size={18} />
                 </button>
               </div>
 
-              {/* Mode Toggle Bar */}
-              <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs">
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-bold text-slate-700">Calculation Mode:</span>
-                  <span className="text-[11px] text-slate-500">
-                    {isModalEq
-                      ? 'Heavy equipment uses Engine Operating Hours (HMR) and Liters per Hour (L/hr).'
-                      : 'Commercial road trucks calculate by Odometer Distance (km) and km per Liter (km/L).'}
-                  </span>
-                </div>
-                <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 shadow-2xs">
-                  <button
-                    type="button"
-                    onClick={() => setShiftForm(prev => ({ ...prev, assetCategory: 'vehicle' }))}
-                    className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-colors cursor-pointer ${!isModalEq ? 'bg-[#00705a] text-white' : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                  >
-                    Truck (KM)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShiftForm(prev => ({ ...prev, assetCategory: 'equipment' }))}
-                    className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-colors cursor-pointer ${isModalEq ? 'bg-amber-700 text-white' : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                  >
-                    Heavy Equipment (HRS)
-                  </button>
-                </div>
-              </div>
-
               {/* Form Body */}
-              <form onSubmit={handleSubmitShift} className="space-y-4 text-xs">
+              <form onSubmit={handleSubmitShift} className="space-y-3 text-xs">
 
-                {/* ──────────────────────────────────────────────────────────────────
-                    1. DRIVER & CREW INFORMATION CARD
-                    ────────────────────────────────────────────────────────────────── */}
-                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/90 space-y-2.5">
+                {/* 2. Route & Meter Readings */}
+                <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-200/80 space-y-2">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 text-slate-900 font-bold text-xs">
-                      <User size={14} className="text-[#00705a]" />
-                      <span>Driver &amp; Crew Information</span>
-                    </div>
-                    <span className="text-[10px] text-slate-500 font-medium">Assigned Operational Personnel</span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-                    <div>
-                      <label className="text-[10.5px] font-semibold text-slate-600 block mb-1">Driver / Operator Name</label>
-                      <input
-                        type="text"
-                        required
-                        value={shiftForm.driverName}
-                        onChange={e => setShiftForm(prev => ({ ...prev, driverName: e.target.value }))}
-                        className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-800"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-[10.5px] font-semibold text-slate-600 block mb-1">Driver Contact Phone</label>
-                      <input
-                        type="text"
-                        value={shiftForm.driverPhone}
-                        onChange={e => setShiftForm(prev => ({ ...prev, driverPhone: e.target.value }))}
-                        className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 font-mono"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-[10.5px] font-semibold text-slate-600 block mb-1">Driving License / Operator Cert</label>
-                      <input
-                        type="text"
-                        value={shiftForm.driverLicense}
-                        onChange={e => setShiftForm(prev => ({ ...prev, driverLicense: e.target.value }))}
-                        className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 font-mono"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-[10.5px] font-semibold text-slate-600 block mb-1">Helper / Co-Driver Name</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. Helper / Co-Driver Name"
-                        value={shiftForm.helperName}
-                        onChange={e => setShiftForm(prev => ({ ...prev, helperName: e.target.value }))}
-                        className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* ──────────────────────────────────────────────────────────────────
-                    2. PROJECT, SITE & LOCATION INFORMATION CARD
-                    ────────────────────────────────────────────────────────────────── */}
-                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/90 space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 text-slate-900 font-bold text-xs">
-                      <MapPin size={14} className="text-[#00705a]" />
-                      <span>Project &amp; Worksite Location Information</span>
-                    </div>
-                    <span className="text-[10px] text-slate-500 font-medium">Site Deployment Details</span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                    <div>
-                      <label className="text-[10.5px] font-semibold text-slate-600 block mb-1">Project Name</label>
-                      <input
-                        type="text"
-                        value={shiftForm.projectName}
-                        onChange={e => setShiftForm(prev => ({ ...prev, projectName: e.target.value }))}
-                        className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-[10.5px] font-semibold text-slate-600 block mb-1">Project Location / Corridor</label>
-                      <input
-                        type="text"
-                        value={shiftForm.projectLocation}
-                        onChange={e => setShiftForm(prev => ({ ...prev, projectLocation: e.target.value }))}
-                        className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-[10.5px] font-semibold text-slate-600 block mb-1">Worksite / Yard / Plant</label>
-                      <input
-                        type="text"
-                        value={shiftForm.worksiteName}
-                        onChange={e => setShiftForm(prev => ({ ...prev, worksiteName: e.target.value }))}
-                        className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* ──────────────────────────────────────────────────────────────────
-                    3. DATE, SHIFT, STAGE & ROUTE/ACTIVITY
-                    ────────────────────────────────────────────────────────────────── */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
-                    <label className="text-[10.5px] font-semibold text-slate-600 block mb-1">Shift Date</label>
-                    <input
-                      type="date"
-                      required
-                      value={shiftForm.logDate}
-                      onChange={e => setShiftForm(prev => ({ ...prev, logDate: e.target.value }))}
-                      className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-[10.5px] font-semibold text-slate-600 block mb-1">Shift Type</label>
-                    <select
-                      value={shiftForm.shift}
-                      onChange={e => setShiftForm(prev => ({ ...prev, shift: e.target.value }))}
-                      className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800"
-                    >
-                      <option value="Day">Day Shift (08:00 – 18:00)</option>
-                      <option value="Night">Night Shift (20:00 – 06:00)</option>
-                      <option value="General">General Full Day</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="text-[10.5px] font-semibold text-slate-600 block mb-1">Operational Stage</label>
-                    <select
-                      value={shiftForm.stage}
-                      onChange={e => setShiftForm(prev => ({ ...prev, stage: e.target.value }))}
-                      className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800"
-                    >
-                      <option value="Working">Working / Heavy Operations</option>
-                      <option value="Transit">In Transit / Material Haulage</option>
-                      <option value="Idle">Idle / Standby</option>
-                      <option value="Maintenance">Site Maintenance / Servicing</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* ──────────────────────────────────────────────────────────────────
-                    4. METER READINGS & RUN CALCULATION (AUTO-SWITCHES BY MODE)
-                    ────────────────────────────────────────────────────────────────── */}
-                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/90 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 font-bold text-slate-900 text-xs">
-                      <Gauge size={14} className={isModalEq ? 'text-amber-700' : 'text-[#00705a]'} />
-                      <span>
-                        {isModalEq
-                          ? 'Heavy Equipment Meter Readings & Operating Hours (HMR)'
-                          : 'Vehicle Route & Speedometer Odometer Readings (km)'}
-                      </span>
-                    </div>
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${isModalEq ? 'bg-amber-100 text-amber-900' : 'bg-emerald-100 text-emerald-900'
-                      }`}>
-                      {isModalEq ? 'Engine Hour Meter (HRS) Mode' : 'Odometer Distance (KM) Mode'}
+                    <span className="font-bold text-slate-800 text-[11.5px] flex items-center gap-1.5">
+                      <Gauge size={13} className={isModalEq ? 'text-amber-700' : 'text-[#00705a]'} />
+                      <span>{isModalEq ? 'Operating Hours & Work Area' : 'Odometer & Route Run'}</span>
+                    </span>
+                    <span className="font-mono font-bold text-[11px] text-[#00705a]">
+                      {isModalEq ? `${mRunHrs} hrs run` : `${mDistKm} km run`}
                     </span>
                   </div>
 
-                  {/* If Truck: Route inputs */}
-                  {!isModalEq && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {!isModalEq ? (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                       <div>
-                        <label className="text-[10.5px] font-semibold text-slate-600 block mb-1">From Location / Origin</label>
+                        <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">From Origin</label>
                         <input
                           type="text"
-                          placeholder="e.g. Origin Base / Site Depot"
+                          placeholder="Origin"
                           value={shiftForm.fromLocation}
                           onChange={e => setShiftForm(prev => ({ ...prev, fromLocation: e.target.value }))}
-                          className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800"
+                          className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs text-slate-800"
                         />
                       </div>
-
                       <div>
-                        <label className="text-[10.5px] font-semibold text-slate-600 block mb-1">To Destination / Drop Site</label>
+                        <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">To Destination</label>
                         <input
                           type="text"
-                          placeholder="e.g. Destination / Worksite Bay"
+                          placeholder="Destination"
                           value={shiftForm.toLocation}
                           onChange={e => setShiftForm(prev => ({ ...prev, toLocation: e.target.value }))}
-                          className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800"
+                          className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs text-slate-800"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">Start Odometer (km)</label>
+                        <input
+                          type="number"
+                          step="any"
+                          value={shiftForm.startOdometer}
+                          onChange={e => setShiftForm(prev => ({ ...prev, startOdometer: e.target.value }))}
+                          className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono font-bold text-slate-800"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">Closing Odometer (km)</label>
+                        <input
+                          type="number"
+                          step="any"
+                          value={shiftForm.endOdometer}
+                          onChange={e => setShiftForm(prev => ({ ...prev, endOdometer: e.target.value }))}
+                          className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono font-bold text-slate-800"
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <div>
+                        <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">Work Section</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Pit B / Chainage 48"
+                          value={shiftForm.fromLocation}
+                          onChange={e => setShiftForm(prev => ({ ...prev, fromLocation: e.target.value }))}
+                          className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs text-slate-800"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">Operation Task</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Cutting / Compaction"
+                          value={shiftForm.toLocation}
+                          onChange={e => setShiftForm(prev => ({ ...prev, toLocation: e.target.value }))}
+                          className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs text-slate-800"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">Opening HMR (hrs)</label>
+                        <input
+                          type="number"
+                          step="any"
+                          value={shiftForm.startEngineHours}
+                          onChange={e => setShiftForm(prev => ({ ...prev, startEngineHours: e.target.value }))}
+                          className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono font-bold text-slate-800"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">Closing HMR (hrs)</label>
+                        <input
+                          type="number"
+                          step="any"
+                          value={shiftForm.endEngineHours}
+                          onChange={e => setShiftForm(prev => ({ ...prev, endEngineHours: e.target.value }))}
+                          className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono font-bold text-slate-800"
                         />
                       </div>
                     </div>
                   )}
-
-                  {/* If Heavy Equipment: Activity / Work Area */}
-                  {isModalEq && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-[10.5px] font-semibold text-slate-600 block mb-1">Equipment Work Area / Section</label>
-                        <input
-                          type="text"
-                          placeholder="e.g. Excavation Pit B · Chainage 48+200"
-                          value={shiftForm.fromLocation}
-                          onChange={e => setShiftForm(prev => ({ ...prev, fromLocation: e.target.value }))}
-                          className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="text-[10.5px] font-semibold text-slate-600 block mb-1">Task / Operation Carried Out</label>
-                        <input
-                          type="text"
-                          placeholder="e.g. Earth Cutting, Trenching, Embankment Compaction"
-                          value={shiftForm.toLocation}
-                          onChange={e => setShiftForm(prev => ({ ...prev, toLocation: e.target.value }))}
-                          className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800"
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Meter inputs & calculated total */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
-                    {isModalEq ? (
-                      <>
-                        <div>
-                          <label className="text-[10.5px] font-semibold text-slate-600 block mb-1">
-                            Opening Engine Hours (HMR)
-                          </label>
-                          <input
-                            type="number"
-                            step="any"
-                            value={shiftForm.startEngineHours}
-                            onChange={e => setShiftForm(prev => ({ ...prev, startEngineHours: e.target.value }))}
-                            className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-slate-800"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="text-[10.5px] font-semibold text-slate-600 block mb-1">
-                            Closing Engine Hours (HMR)
-                          </label>
-                          <input
-                            type="number"
-                            step="any"
-                            placeholder="Enter closing hours"
-                            value={shiftForm.endEngineHours}
-                            onChange={e => setShiftForm(prev => ({ ...prev, endEngineHours: e.target.value }))}
-                            className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-slate-800"
-                          />
-                        </div>
-
-                        {/* Calculated Total Hours Run */}
-                        <div className="p-2 rounded-xl bg-amber-50/80 border border-amber-200 flex flex-col justify-center">
-                          <span className="text-[10px] font-semibold text-amber-800 uppercase tracking-wide">
-                            Calculated Engine Hours Run:
-                          </span>
-                          <span className="font-extrabold text-base font-mono text-amber-950">
-                            {mRunHrs} <span className="text-xs font-bold text-amber-800">hrs today</span>
-                          </span>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div>
-                          <label className="text-[10.5px] font-semibold text-slate-600 block mb-1">
-                            Opening Speedometer / Odometer (km)
-                          </label>
-                          <input
-                            type="number"
-                            step="any"
-                            value={shiftForm.startOdometer}
-                            onChange={e => setShiftForm(prev => ({ ...prev, startOdometer: e.target.value }))}
-                            className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-slate-800"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="text-[10.5px] font-semibold text-slate-600 block mb-1">
-                            Closing Speedometer / Odometer (km)
-                          </label>
-                          <input
-                            type="number"
-                            step="any"
-                            placeholder="Enter closing km"
-                            value={shiftForm.endOdometer}
-                            onChange={e => setShiftForm(prev => ({ ...prev, endOdometer: e.target.value }))}
-                            className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-slate-800"
-                          />
-                        </div>
-
-                        {/* Calculated Total Travel KM */}
-                        <div className="p-2 rounded-xl bg-emerald-50/80 border border-emerald-200 flex flex-col justify-center">
-                          <span className="text-[10px] font-semibold text-[#00705a] uppercase tracking-wide">
-                            Calculated Total Travel Distance:
-                          </span>
-                          <span className="font-extrabold text-base font-mono text-emerald-950">
-                            {mDistKm} <span className="text-xs font-bold text-[#00705a]">km run</span>
-                          </span>
-                        </div>
-                      </>
-                    )}
-                  </div>
                 </div>
 
-                {/* ──────────────────────────────────────────────────────────────────
-                    5. FUEL REFILL STOPS, DIESEL BILL & FUEL TYPE
-                    ────────────────────────────────────────────────────────────────── */}
-                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/90 space-y-3">
+                {/* 3. Fuel Refill & Slip */}
+                <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-200/80 space-y-2">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 font-bold text-slate-900 text-xs">
-                      <Fuel size={14} className="text-[#00705a]" />
-                      <span>Fuel Refill Stops &amp; Diesel Bill Details</span>
-                    </div>
-                    <span className="text-[10px] text-slate-500 font-medium">Station Invoicing &amp; Dispensing</span>
+                    <span className="font-bold text-slate-800 text-[11.5px] flex items-center gap-1.5">
+                      <Fuel size={13} className="text-[#00705a]" />
+                      <span>Fuel Bill &amp; Refill Slip</span>
+                    </span>
+                    <span className="font-mono font-bold text-[11px] text-teal-800">
+                      Fuel Bill: ₹{mFuelCost.toLocaleString('en-IN')}
+                    </span>
                   </div>
 
-                  {/* Fuel Type & Payment Method */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     <div>
-                      <label className="text-[10.5px] font-semibold text-slate-600 block mb-1">Type of Fuel</label>
-                      <select
-                        value={shiftForm.fuelType}
-                        onChange={e => setShiftForm(prev => ({ ...prev, fuelType: e.target.value }))}
-                        className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-800"
-                      >
-                        <option value="Diesel (BS-VI)">Diesel (BS-VI HSD)</option>
-                        <option value="Industrial HSD">Industrial HSD (Machinery Fuel)</option>
-                        <option value="CNG">CNG</option>
-                        <option value="Petrol">Petrol</option>
-                        <option value="Electric (kWh)">Electric (kWh)</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="text-[10.5px] font-semibold text-slate-600 block mb-1">Fuel Station / Bowser Pump</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. Highway Diesel Plaza / Site Bowser"
-                        value={shiftForm.fuelStation}
-                        onChange={e => setShiftForm(prev => ({ ...prev, fuelStation: e.target.value }))}
-                        className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-[10.5px] font-semibold text-slate-600 block mb-1">Fuel Bill / Receipt Number</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. INV-2026-9041"
-                        value={shiftForm.fuelBillNumber}
-                        onChange={e => setShiftForm(prev => ({ ...prev, fuelBillNumber: e.target.value }))}
-                        className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-mono text-slate-800"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-[10.5px] font-semibold text-slate-600 block mb-1">Payment Method</label>
-                      <select
-                        value={shiftForm.paymentMode}
-                        onChange={e => setShiftForm(prev => ({ ...prev, paymentMode: e.target.value }))}
-                        className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800"
-                      >
-                        <option value="Fleet Diesel Card">Fleet Diesel Card</option>
-                        <option value="Site Diesel Voucher">Site Bowser Fuel Voucher</option>
-                        <option value="Fastag Fuel">Fastag Fuel Deduction</option>
-                        <option value="Cash Voucher">Cash with Receipt</option>
-                        <option value="Company Account">Company Credit Account</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Quantity, Rate & Total Amount */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end pt-1">
-                    <div>
-                      <label className="text-[10.5px] font-semibold text-slate-600 block mb-1">Fuel Filled Quantity (L)</label>
+                      <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">Fuel Liters (L)</label>
                       <input
                         type="number"
                         step="any"
                         placeholder="0.00"
                         value={shiftForm.fuelFilledLiters}
                         onChange={e => setShiftForm(prev => ({ ...prev, fuelFilledLiters: e.target.value }))}
-                        className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-slate-800"
+                        className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono font-bold text-slate-800"
                       />
                     </div>
-
                     <div>
-                      <label className="text-[10.5px] font-semibold text-slate-600 block mb-1">Fuel Rate / Liter (₹)</label>
+                      <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">Rate / Liter (₹)</label>
                       <input
                         type="number"
                         step="any"
                         value={shiftForm.fuelRatePerLiter}
                         onChange={e => setShiftForm(prev => ({ ...prev, fuelRatePerLiter: e.target.value }))}
-                        className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-mono text-slate-800"
+                        className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono text-slate-800"
                       />
                     </div>
-
-                    {/* Calculated Fuel Bill Amount */}
-                    <div className="p-2 rounded-xl bg-teal-50/80 border border-teal-200 flex flex-col justify-center">
-                      <span className="text-[10px] font-semibold text-teal-800 uppercase tracking-wide">
-                        Total Fuel Bill Amount:
-                      </span>
-                      <span className="font-extrabold text-base font-mono text-teal-950">
-                        ₹{mFuelCost.toLocaleString('en-IN')}
-                      </span>
+                    <div>
+                      <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">Slip / Bill No.</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. INV-9041"
+                        value={shiftForm.fuelBillNumber}
+                        onChange={e => setShiftForm(prev => ({ ...prev, fuelBillNumber: e.target.value }))}
+                        className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono text-slate-800"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-semibold text-slate-500 block mb-0.5">Pump / Station</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Site Bowser"
+                        value={shiftForm.fuelStation}
+                        onChange={e => setShiftForm(prev => ({ ...prev, fuelStation: e.target.value }))}
+                        className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs text-slate-800"
+                      />
                     </div>
                   </div>
                 </div>
 
-                {/* ──────────────────────────────────────────────────────────────────
-                    6. CALCULATED AVERAGE FUEL CONSUMPTION & OPERATIONAL METRICS
-                    ────────────────────────────────────────────────────────────────── */}
-                <div className={`p-4 rounded-xl border space-y-2 ${isModalEq ? 'bg-amber-50/60 border-amber-200' : 'bg-emerald-50/60 border-emerald-200'
-                  }`}>
+                {/* 4. Incidentals (Toll, Repairs, Spare Parts) */}
+                <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-200/80 space-y-2">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 font-bold text-slate-900 text-xs">
-                      <BarChart3 size={15} className={isModalEq ? 'text-amber-700' : 'text-[#00705a]'} />
-                      <span>Calculated Average Fuel Consumption &amp; Performance</span>
-                    </div>
-                    <span className="text-[10px] font-mono font-bold text-slate-600">
-                      Auto-Calculated Summary
+                    <span className="font-bold text-slate-800 text-[11.5px] flex items-center gap-1.5">
+                      <Receipt size={13} className="text-[#00705a]" />
+                      <span>Trip Expenses (Toll, Repairs, Parts)</span>
+                    </span>
+                    <span className="font-mono font-bold text-[11px] text-slate-600">
+                      Incidentals: ₹{(mTollCost + mRepairCost + mPartCost).toLocaleString('en-IN')}
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                    <div className="p-3 bg-white rounded-lg border border-slate-200 shadow-2xs">
-                      <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block">
-                        {isModalEq ? 'Equipment Consumption (L/hr)' : 'Vehicle Mileage (km/L)'}
-                      </span>
-                      <div className="flex items-baseline gap-2 mt-1">
-                        <span className="text-2xl font-black font-mono text-slate-900">
-                          {mAvgEfficiency || '—'}
-                        </span>
-                        <span className="text-xs font-bold text-slate-600">
-                          {isModalEq ? 'Liters / Hour (L/hr)' : 'km / Liter (km/L)'}
-                        </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    {/* Toll */}
+                    <div className="p-2 bg-white rounded-lg border border-slate-200 space-y-1">
+                      <div className="flex items-center justify-between text-[10px] font-bold text-slate-600">
+                        <span>Toll / FASTag</span>
+                        <span className="text-amber-600 font-mono">₹</span>
                       </div>
-                      <div className="text-[10.5px] text-slate-500 mt-1">
-                        {isModalEq ? (
-                          <span>Formula: {mLiters} L Fuel ÷ {mRunHrs} Hours Run</span>
-                        ) : (
-                          <span>Formula: {mDistKm} km Travelled ÷ {mLiters} L Fuel</span>
-                        )}
-                      </div>
+                      <input
+                        type="number"
+                        step="any"
+                        placeholder="Amount (₹)"
+                        value={shiftForm.tollAmount}
+                        onChange={e => setShiftForm(prev => ({ ...prev, tollAmount: e.target.value }))}
+                        className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs font-mono font-bold text-slate-800"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Plaza / Slip No."
+                        value={shiftForm.tollReceipt}
+                        onChange={e => setShiftForm(prev => ({ ...prev, tollReceipt: e.target.value }))}
+                        className="w-full bg-white border border-slate-200 rounded px-2 py-0.5 text-[11px] text-slate-700 placeholder:text-slate-400"
+                      />
                     </div>
 
-                    <div className="p-3 bg-white rounded-lg border border-slate-200 shadow-2xs">
-                      <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block">
-                        Estimated Operating Cost
-                      </span>
-                      <div className="flex items-baseline gap-2 mt-1">
-                        <span className="text-2xl font-black font-mono text-slate-900">
-                          ₹{mFuelCost.toLocaleString('en-IN')}
-                        </span>
-                        <span className="text-xs font-medium text-slate-500">Fuel Bill Amount</span>
+                    {/* Breakdown / Repairs */}
+                    <div className="p-2 bg-white rounded-lg border border-slate-200 space-y-1">
+                      <div className="flex items-center justify-between text-[10px] font-bold text-slate-600">
+                        <span>Breakdown / Repairs</span>
+                        <span className="text-rose-600 font-mono">₹</span>
                       </div>
-                      <div className="text-[10.5px] text-slate-500 mt-1">
-                        Fuel: {shiftForm.fuelType} · Rate: ₹{mRate}/L
+                      <input
+                        type="number"
+                        step="any"
+                        placeholder="Amount (₹)"
+                        value={shiftForm.repairCost}
+                        onChange={e => setShiftForm(prev => ({ ...prev, repairCost: e.target.value }))}
+                        className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs font-mono font-bold text-slate-800"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Mechanic, puncture, welding..."
+                        value={shiftForm.repairDetails}
+                        onChange={e => setShiftForm(prev => ({ ...prev, repairDetails: e.target.value }))}
+                        className="w-full bg-white border border-slate-200 rounded px-2 py-0.5 text-[11px] text-slate-700 placeholder:text-slate-400"
+                      />
+                    </div>
+
+                    {/* Spare Parts */}
+                    <div className="p-2 bg-white rounded-lg border border-slate-200 space-y-1">
+                      <div className="flex items-center justify-between text-[10px] font-bold text-slate-600">
+                        <span>Spare Parts / Oil</span>
+                        <span className="text-blue-600 font-mono">₹</span>
                       </div>
+                      <input
+                        type="number"
+                        step="any"
+                        placeholder="Amount (₹)"
+                        value={shiftForm.sparePartCost}
+                        onChange={e => setShiftForm(prev => ({ ...prev, sparePartCost: e.target.value }))}
+                        className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs font-mono font-bold text-slate-800"
+                      />
+                      <input
+                        type="text"
+                        placeholder="AdBlue, tyre, oil, hose..."
+                        value={shiftForm.sparePartDetails}
+                        onChange={e => setShiftForm(prev => ({ ...prev, sparePartDetails: e.target.value }))}
+                        className="w-full bg-white border border-slate-200 rounded px-2 py-0.5 text-[11px] text-slate-700 placeholder:text-slate-400"
+                      />
                     </div>
                   </div>
                 </div>
 
-                {/* Remarks & Notes */}
+                {/* 5. Remarks */}
                 <div>
-                  <label className="text-[10.5px] font-semibold text-slate-600 block mb-1">Shift Handover &amp; Maintenance Notes</label>
-                  <textarea
-                    rows={2}
-                    placeholder="Material delivered, road delays, engine/tyre condition, hydraulic leaks..."
+                  <input
+                    type="text"
+                    placeholder="Handover remarks / condition notes (optional)..."
                     value={shiftForm.remarks}
                     onChange={e => setShiftForm(prev => ({ ...prev, remarks: e.target.value }))}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 placeholder:text-slate-400"
                   />
                 </div>
 
-                {/* Footer Buttons */}
-                <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-                  <button
-                    type="button"
-                    onClick={() => setIsLogModalOpen(false)}
-                    className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={saving}
-                    className="px-5 py-2.5 rounded-xl bg-[#00705a] hover:bg-[#005a48] text-white text-xs font-bold transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1.5 shadow-sm"
-                  >
-                    {saving ? (
-                      <>
-                        <RefreshCw size={13} className="animate-spin" />
-                        <span>Saving Shift Record...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Check size={14} />
-                        <span>Save Shift Run &amp; Fuel Record</span>
-                      </>
+                {/* 6. Footer Total Strip & Submit */}
+                <div className="flex flex-col sm:flex-row items-center justify-between pt-2.5 border-t border-slate-100 gap-2.5">
+                  <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-start">
+                    <div>
+                      <span className="text-[10px] font-semibold text-slate-500 uppercase block">Total Shift Expense</span>
+                      <span className="text-lg font-black font-mono text-slate-900">
+                        ₹{mTotalExpenses.toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                    {mAvgEfficiency && (
+                      <div className="pl-3 border-l border-slate-200">
+                        <span className="text-[10px] font-semibold text-slate-500 uppercase block">Efficiency</span>
+                        <span className="text-xs font-bold font-mono text-[#00705a]">
+                          {mAvgEfficiency} {isModalEq ? 'L/hr' : 'km/L'}
+                        </span>
+                      </div>
                     )}
-                  </button>
+                  </div>
+
+                  <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setIsLogModalOpen(false)}
+                      className="px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={saving}
+                      className="px-4 py-2 rounded-xl bg-[#00705a] hover:bg-[#005a48] text-white text-xs font-bold transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1.5 shadow-sm"
+                    >
+                      {saving ? (
+                        <>
+                          <RefreshCw size={12} className="animate-spin" />
+                          <span>Saving...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Check size={13} />
+                          <span>Save Record</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
               </form>
             </div>
