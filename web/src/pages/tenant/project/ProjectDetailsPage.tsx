@@ -6,7 +6,8 @@ import {
   TrendingUp, TrendingDown, Wallet, ShieldCheck,
   Building2, Search, ArrowUpRight, ArrowDownLeft,
   Copy, Check, HardHat, RefreshCw, User, Route,
-  Truck, Train, Ship, Plane, ArrowRight, Scale
+  Truck, Train, Ship, Plane, ArrowRight, Scale,
+  Clock, Wrench, Filter, Activity, Warehouse
 } from 'lucide-react';
 interface WorkOrderDossier {
   id: number;
@@ -115,6 +116,42 @@ interface Project {
   fuelSummary?: { totalLiters: number; totalFuelCost: number; totalKm: number; totalTrips: number };
   dispatchPassports?: any[];
   crewRoster?: any[];
+  equipmentUtilization?: ProjectEquipmentUtilization[];
+  equipmentUtilizationSummary?: {
+    totalHours: number;
+    totalOperations: number;
+    totalQuantity: number;
+    distinctEquipmentCount: number;
+  };
+}
+
+export interface ProjectEquipmentUtilization {
+  id: number;
+  stockyardId: number;
+  stockyardName: string;
+  projectId: string;
+  projectName: string;
+  transactionId?: number;
+  shiftId?: string;
+  equipmentId: string;
+  equipmentNumber: string;
+  equipmentName?: string;
+  equipmentType: string;
+  operationType: 'UNLOADING' | 'LOADING' | 'INTERNAL_SHIFT' | 'OTHER';
+  materialName?: string;
+  quantity?: number;
+  unit?: string;
+  sourceRackName?: string;
+  destinationRackName?: string;
+  startTime: string;
+  endTime: string;
+  durationHours: number;
+  operatorName?: string;
+  operatorPhone?: string;
+  status: string;
+  remarks?: string;
+  recordedBy?: string;
+  createdAt?: string;
 }
 
 export default function ProjectDetailsPage() {
@@ -127,8 +164,8 @@ export default function ProjectDetailsPage() {
 
   const [searchParams] = useSearchParams();
   const initialTab = (searchParams.get('tab') as any) || 'overview';
-  // 360 Operations Tabs: overview, corridor, fleet, crew, fuel, waybills, transactions
-  const [viewMode, setViewMode] = useState<'overview' | 'corridor' | 'fleet' | 'crew' | 'fuel' | 'waybills' | 'transactions'>(initialTab);
+  // 360 Operations Tabs: overview, corridor, fleet, crew, fuel, waybills, transactions, equipment
+  const [viewMode, setViewMode] = useState<'overview' | 'corridor' | 'fleet' | 'crew' | 'fuel' | 'waybills' | 'transactions' | 'equipment'>(initialTab);
 
   // Toast notification state
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -137,6 +174,18 @@ export default function ProjectDetailsPage() {
   // Transaction filters
   const [txFilter, setTxFilter] = useState<'all' | 'credit' | 'debit' | 'vendor' | 'petty'>('all');
   const [txSearch, setTxSearch] = useState('');
+
+  // Equipment Utilization filters
+  const [eqOpFilter, setEqOpFilter] = useState<'ALL' | 'UNLOADING' | 'LOADING' | 'INTERNAL_SHIFT' | 'OTHER'>('ALL');
+  const [eqYardFilter, setEqYardFilter] = useState<string>('ALL');
+
+  // Associated Stockyards
+  const [projectStockyards, setProjectStockyards] = useState<any[]>([]);
+  const [eqTypeFilter, setEqTypeFilter] = useState<string>('ALL');
+  const [eqMachineFilter, setEqMachineFilter] = useState<string>('ALL');
+  const [eqSearch, setEqSearch] = useState<string>('');
+  const [eqStartDate, setEqStartDate] = useState<string>('');
+  const [eqEndDate, setEqEndDate] = useState<string>('');
 
   const host = (() => {
     const b = import.meta.env.VITE_API_URL || 'http://localhost:5000';
@@ -167,6 +216,17 @@ export default function ProjectDetailsPage() {
         setProject(data);
       } else {
         console.error('Failed to fetch project details');
+      }
+
+      // Also fetch associated stockyards
+      try {
+        const syRes = await fetch(`${host}/api/tenant/projects/${id}/stockyards`);
+        if (syRes.ok) {
+          const syData = await syRes.json();
+          setProjectStockyards(Array.isArray(syData) ? syData : []);
+        }
+      } catch (syErr) {
+        console.warn('Could not load associated project stockyards:', syErr);
       }
     } catch (err) {
       console.error('Error fetching project:', err);
@@ -209,6 +269,95 @@ export default function ProjectDetailsPage() {
       return true;
     });
   }, [project?.transactions, txFilter, txSearch]);
+
+  // Distinct filter options from equipment records
+  const availableStockyards = useMemo(() => {
+    if (!project?.equipmentUtilization) return [];
+    const map = new Map<number, string>();
+    project.equipmentUtilization.forEach(u => {
+      if (u.stockyardId && u.stockyardName) map.set(u.stockyardId, u.stockyardName);
+    });
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
+  }, [project?.equipmentUtilization]);
+
+  const availableEquipmentTypes = useMemo(() => {
+    if (!project?.equipmentUtilization) return [];
+    const types = new Set<string>();
+    project.equipmentUtilization.forEach(u => {
+      if (u.equipmentType) types.add(u.equipmentType);
+    });
+    return Array.from(types).sort();
+  }, [project?.equipmentUtilization]);
+
+  const availableMachines = useMemo(() => {
+    if (!project?.equipmentUtilization) return [];
+    const map = new Map<string, { id: string; number: string; name?: string; type: string }>();
+    project.equipmentUtilization.forEach(u => {
+      const key = u.equipmentNumber || u.equipmentId;
+      if (key && !map.has(key)) {
+        map.set(key, {
+          id: u.equipmentId,
+          number: u.equipmentNumber,
+          name: u.equipmentName,
+          type: u.equipmentType
+        });
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => a.number.localeCompare(b.number));
+  }, [project?.equipmentUtilization]);
+
+  // Filtered Equipment Utilization
+  const filteredEquipmentUtilization = useMemo(() => {
+    if (!project?.equipmentUtilization) return [];
+    return project.equipmentUtilization.filter(u => {
+      if (eqOpFilter !== 'ALL' && u.operationType !== eqOpFilter) return false;
+      if (eqYardFilter !== 'ALL' && String(u.stockyardId) !== eqYardFilter) return false;
+      if (eqTypeFilter !== 'ALL' && u.equipmentType !== eqTypeFilter) return false;
+      if (eqMachineFilter !== 'ALL' && u.equipmentNumber !== eqMachineFilter && u.equipmentId !== eqMachineFilter) return false;
+
+      if (eqStartDate) {
+        const itemDate = new Date(u.startTime).getTime();
+        const filterDate = new Date(eqStartDate).getTime();
+        if (itemDate < filterDate) return false;
+      }
+      if (eqEndDate) {
+        const itemDate = new Date(u.endTime || u.startTime).getTime();
+        const filterDate = new Date(eqEndDate).getTime() + 86400000;
+        if (itemDate > filterDate) return false;
+      }
+
+      if (eqSearch.trim()) {
+        const q = eqSearch.toLowerCase();
+        const num = (u.equipmentNumber || '').toLowerCase();
+        const name = (u.equipmentName || '').toLowerCase();
+        const typ = (u.equipmentType || '').toLowerCase();
+        const op = (u.operatorName || '').toLowerCase();
+        const rack = (u.sourceRackName || '').toLowerCase() + ' ' + (u.destinationRackName || '').toLowerCase();
+        const mat = (u.materialName || '').toLowerCase();
+        const rem = (u.remarks || '').toLowerCase();
+        const shift = (u.shiftId || '').toLowerCase();
+        return num.includes(q) || name.includes(q) || typ.includes(q) || op.includes(q) || rack.includes(q) || mat.includes(q) || rem.includes(q) || shift.includes(q);
+      }
+      return true;
+    });
+  }, [project?.equipmentUtilization, eqOpFilter, eqYardFilter, eqTypeFilter, eqMachineFilter, eqStartDate, eqEndDate, eqSearch]);
+
+  const eqActiveSummary = useMemo(() => {
+    let totalHours = 0;
+    let totalQty = 0;
+    const machines = new Set<string>();
+    filteredEquipmentUtilization.forEach(u => {
+      totalHours += Number(u.durationHours) || 0;
+      totalQty += Number(u.quantity) || 0;
+      machines.add(u.equipmentNumber || u.equipmentId);
+    });
+    return {
+      totalHours: parseFloat(totalHours.toFixed(2)),
+      totalOperations: filteredEquipmentUtilization.length,
+      totalQuantity: parseFloat(totalQty.toFixed(2)),
+      distinctEquipmentCount: machines.size
+    };
+  }, [filteredEquipmentUtilization]);
 
   if (loading) {
     return (
@@ -387,6 +536,13 @@ export default function ProjectDetailsPage() {
                 }`}
             >
               Ledger ({project.transactions?.length || 0})
+            </button>
+            <button
+              onClick={() => setViewMode('equipment')}
+              className={`px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap ${viewMode === 'equipment' ? 'bg-[#00705a] text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                }`}
+            >
+              Equipment Utilization ({project.equipmentUtilization?.length || 0})
             </button>
           </div>
         </div>
@@ -800,6 +956,84 @@ export default function ProjectDetailsPage() {
                 </div>
               ))
             )}
+
+            {/* Associated Stockyards & Intermediate Buffers */}
+            <div className="mt-8 pt-6 border-t border-slate-100 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                    <Warehouse size={16} className="text-[#00705a]" />
+                    <span>Associated Stockyards & Intermediate Buffers ({projectStockyards.length})</span>
+                  </h4>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Stockyards linked as intermediate stops in this project's corridor routes
+                  </p>
+                </div>
+                <button
+                  onClick={() => navigate('/tenant/stockyard')}
+                  className="flex items-center gap-1.5 text-xs font-bold text-[#00705a] hover:underline"
+                >
+                  <span>Open Stockyard Hub</span>
+                  <ArrowRight size={13} />
+                </button>
+              </div>
+
+              {projectStockyards.length === 0 ? (
+                <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 text-center">
+                  <p className="text-xs text-slate-500">
+                    No stockyards currently linked to this project route. Add a stockyard stop in the Operations Sketch Studio.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {projectStockyards.map((sy, sIdx) => (
+                    <div key={sy.id || sIdx} className="p-4 rounded-2xl bg-emerald-50/40 border border-emerald-200 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-[10px] font-black uppercase px-2 py-0.5 rounded bg-emerald-100 text-[#00705a] border border-emerald-300">
+                              {sy.stockyardCode}
+                            </span>
+                            <span className="font-black text-xs text-slate-900">{sy.stockyardName}</span>
+                          </div>
+                          <div className="text-[11px] text-slate-500 mt-1 flex items-center gap-1.5">
+                            <MapPin size={11} className="text-slate-400" />
+                            <span>{sy.location || 'Central Stockyard Hub'}</span>
+                            <span className="text-slate-300">·</span>
+                            <span>{sy.divisionName || 'Infrastructure Division'}</span>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => navigate('/tenant/stockyard')}
+                          className="px-2.5 py-1 rounded-lg bg-white border border-emerald-200 text-[#00705a] hover:bg-emerald-50 text-[11px] font-bold shadow-2xs"
+                        >
+                          View Yard ➔
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-4 gap-2 pt-2 border-t border-emerald-200/60 text-center">
+                        <div className="bg-white p-2 rounded-xl border border-emerald-100">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase block">Planned</span>
+                          <span className="text-xs font-black text-slate-900">{(sy.plannedQuantity || 0).toLocaleString()} MT</span>
+                        </div>
+                        <div className="bg-white p-2 rounded-xl border border-emerald-100">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase block">Received</span>
+                          <span className="text-xs font-bold text-emerald-700">{(sy.actualReceived || 0).toLocaleString()} MT</span>
+                        </div>
+                        <div className="bg-white p-2 rounded-xl border border-emerald-100">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase block">Issued</span>
+                          <span className="text-xs font-bold text-blue-700">{(sy.actualIssued || 0).toLocaleString()} MT</span>
+                        </div>
+                        <div className="bg-white p-2 rounded-xl border border-emerald-100">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase block">Available</span>
+                          <span className="text-xs font-black text-slate-900">{(sy.currentAvailable || 0).toLocaleString()} MT</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -1177,6 +1411,336 @@ export default function ProjectDetailsPage() {
                     <tr>
                       <td colSpan={7} className="py-12 text-center text-slate-400 font-semibold">
                         No transactions found for this filter.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* VIEW 3: HEAVY EQUIPMENT & MACHINERY UTILIZATION */}
+      {viewMode === 'equipment' && (
+        <div className="space-y-6">
+          {/* Section Summary KPI Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+              <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1.5">
+                <span>Total Operating Hours</span>
+                <Clock size={15} className="text-emerald-600" />
+              </div>
+              <div className="text-2xl font-black text-slate-900 tracking-tight">
+                {eqActiveSummary.totalHours} <span className="text-xs font-bold text-slate-400">hours</span>
+              </div>
+              <div className="text-[11px] font-semibold text-slate-500 mt-1">
+                Active machinery run time on project
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+              <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1.5">
+                <span>Machinery Deployed</span>
+                <Wrench size={15} className="text-blue-600" />
+              </div>
+              <div className="text-2xl font-black text-slate-900 tracking-tight">
+                {eqActiveSummary.distinctEquipmentCount} <span className="text-xs font-bold text-slate-400">units</span>
+              </div>
+              <div className="text-[11px] font-semibold text-slate-500 mt-1">
+                Distinct heavy machinery recorded
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+              <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1.5">
+                <span>Operations Executed</span>
+                <Activity size={15} className="text-indigo-600" />
+              </div>
+              <div className="text-2xl font-black text-slate-900 tracking-tight">
+                {eqActiveSummary.totalOperations} <span className="text-xs font-bold text-slate-400">tasks</span>
+              </div>
+              <div className="text-[11px] font-semibold text-slate-500 mt-1">
+                Unloading, loading & internal shifting
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+              <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1.5">
+                <span>Total Cargo Handled</span>
+                <Scale size={15} className="text-purple-600" />
+              </div>
+              <div className="text-2xl font-black text-slate-900 tracking-tight">
+                {eqActiveSummary.totalQuantity.toLocaleString()} <span className="text-xs font-bold text-slate-400">MT</span>
+              </div>
+              <div className="text-[11px] font-semibold text-slate-500 mt-1">
+                Material handled across stockyards
+              </div>
+            </div>
+          </div>
+
+          {/* Main Card with Ledger & Filters */}
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 sm:p-7 space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+              <div>
+                <h3 className="text-base font-black text-slate-900">Heavy Equipment Utilization Ledger</h3>
+                <p className="text-xs text-slate-400 font-medium">Traceable log of heavy equipment (JCBs, loaders, excavators) deployed for this project</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
+                  Showing {filteredEquipmentUtilization.length} of {project.equipmentUtilization?.length || 0} Records
+                </span>
+              </div>
+            </div>
+
+            {/* Filter Toolbar */}
+            <div className="space-y-3 bg-slate-50 p-4 rounded-2xl border border-slate-200/80">
+              {/* Row 1: Operation Pills */}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 mr-1 flex items-center gap-1">
+                  <Filter size={12} /> Operation:
+                </span>
+                {(['ALL', 'UNLOADING', 'LOADING', 'INTERNAL_SHIFT', 'OTHER'] as const).map(op => (
+                  <button
+                    key={op}
+                    onClick={() => setEqOpFilter(op)}
+                    className={`px-3 py-1 rounded-xl text-xs font-black transition-all ${
+                      eqOpFilter === op
+                        ? op === 'UNLOADING'
+                          ? 'bg-emerald-600 text-white shadow-sm'
+                          : op === 'LOADING'
+                          ? 'bg-blue-600 text-white shadow-sm'
+                          : op === 'INTERNAL_SHIFT'
+                          ? 'bg-indigo-600 text-white shadow-sm'
+                          : 'bg-slate-900 text-white shadow-sm'
+                        : 'bg-white text-slate-600 hover:bg-slate-200 border border-slate-200'
+                    }`}
+                  >
+                    {op === 'ALL' ? 'All Operations' : op === 'INTERNAL_SHIFT' ? 'Internal Shifting' : op === 'UNLOADING' ? 'Unloading' : op === 'LOADING' ? 'Loading' : 'Other Handling'}
+                  </button>
+                ))}
+              </div>
+
+              {/* Row 2: Dropdowns & Date & Search */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5 pt-1">
+                {/* Stockyard Filter */}
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">
+                    Stockyard
+                  </label>
+                  <select
+                    value={eqYardFilter}
+                    onChange={e => setEqYardFilter(e.target.value)}
+                    className="w-full px-3 py-1.5 text-xs font-bold bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  >
+                    <option value="ALL">All Stockyards</option>
+                    {availableStockyards.map(y => (
+                      <option key={y.id} value={String(y.id)}>{y.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Equipment Type Filter */}
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">
+                    Equipment Type
+                  </label>
+                  <select
+                    value={eqTypeFilter}
+                    onChange={e => setEqTypeFilter(e.target.value)}
+                    className="w-full px-3 py-1.5 text-xs font-bold bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  >
+                    <option value="ALL">All Equipment Types</option>
+                    {availableEquipmentTypes.map(t => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Machine Filter */}
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">
+                    Individual Machine
+                  </label>
+                  <select
+                    value={eqMachineFilter}
+                    onChange={e => setEqMachineFilter(e.target.value)}
+                    className="w-full px-3 py-1.5 text-xs font-bold bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  >
+                    <option value="ALL">All Machines</option>
+                    {availableMachines.map(m => (
+                      <option key={m.number} value={m.number}>
+                        {m.number} ({m.type})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Date Range */}
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">
+                    From Date
+                  </label>
+                  <input
+                    type="date"
+                    value={eqStartDate}
+                    onChange={e => setEqStartDate(e.target.value)}
+                    className="w-full px-3 py-1.5 text-xs font-bold bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">
+                    To Date
+                  </label>
+                  <input
+                    type="date"
+                    value={eqEndDate}
+                    onChange={e => setEqEndDate(e.target.value)}
+                    className="w-full px-3 py-1.5 text-xs font-bold bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+
+              {/* Row 3: Search Bar */}
+              <div className="relative">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search by equipment ID, operator name, rack location, shift ID, remarks..."
+                  value={eqSearch}
+                  onChange={e => setEqSearch(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 text-xs font-semibold bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+            </div>
+
+            {/* Table */}
+            <div className="overflow-x-auto rounded-2xl border border-slate-100">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider border-b border-slate-100 text-[10px]">
+                    <th className="py-3 px-4">Equipment & ID</th>
+                    <th className="py-3 px-4">Operation</th>
+                    <th className="py-3 px-4">Stockyard & Location</th>
+                    <th className="py-3 px-4">Material & Qty</th>
+                    <th className="py-3 px-4">Operating Window</th>
+                    <th className="py-3 px-4 text-right">Duration</th>
+                    <th className="py-3 px-4">Assigned Operator</th>
+                    <th className="py-3 px-4">Linked Ref</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {filteredEquipmentUtilization.length > 0 ? (
+                    filteredEquipmentUtilization.map(u => {
+                      const sDate = new Date(u.startTime);
+                      const eDate = new Date(u.endTime);
+                      const dateStr = !isNaN(sDate.getTime()) ? sDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+                      const timeStr = !isNaN(sDate.getTime()) && !isNaN(eDate.getTime())
+                        ? `${sDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${eDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                        : '—';
+
+                      return (
+                        <tr key={u.id} className="hover:bg-slate-50/70 transition-colors">
+                          <td className="py-3.5 px-4">
+                            <div className="flex items-center gap-2">
+                              <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center font-black text-xs shrink-0 border border-emerald-200">
+                                <Wrench size={14} />
+                              </div>
+                              <div>
+                                <span className="font-bold text-slate-900 block">{u.equipmentNumber || u.equipmentId}</span>
+                                <span className="text-[10px] text-slate-400 block">{u.equipmentType || u.equipmentName}</span>
+                              </div>
+                            </div>
+                          </td>
+
+                          <td className="py-3.5 px-4">
+                            <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                              u.operationType === 'UNLOADING' ? 'bg-emerald-100 text-emerald-800' :
+                              u.operationType === 'LOADING' ? 'bg-blue-100 text-blue-800' :
+                              u.operationType === 'INTERNAL_SHIFT' ? 'bg-indigo-100 text-indigo-800' :
+                              'bg-slate-100 text-slate-800'
+                            }`}>
+                              {u.operationType === 'INTERNAL_SHIFT' ? 'Internal Shift' : u.operationType}
+                            </span>
+                          </td>
+
+                          <td className="py-3.5 px-4">
+                            <span className="font-bold text-slate-800 block text-xs">{u.stockyardName}</span>
+                            <div className="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5">
+                              {u.operationType === 'INTERNAL_SHIFT' ? (
+                                <>
+                                  <span className="font-semibold text-slate-700">{u.sourceRackName || 'Rack A'}</span>
+                                  <ArrowRight size={10} className="text-slate-400" />
+                                  <span className="font-semibold text-indigo-700">{u.destinationRackName || 'Rack B'}</span>
+                                </>
+                              ) : (
+                                <span>{u.destinationRackName || u.sourceRackName || 'Designated Bay'}</span>
+                              )}
+                            </div>
+                          </td>
+
+                          <td className="py-3.5 px-4">
+                            <span className="font-bold text-slate-800 block">{u.materialName || 'Material'}</span>
+                            {Number(u.quantity) > 0 && (
+                              <span className="text-[10px] font-semibold text-slate-500">
+                                {u.quantity} {u.unit || 'MT'}
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="py-3.5 px-4">
+                            <span className="font-bold text-slate-800 block text-xs">{dateStr}</span>
+                            <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                              <Clock size={10} />
+                              {timeStr}
+                            </span>
+                          </td>
+
+                          <td className="py-3.5 px-4 text-right">
+                            <span className="font-black text-slate-900 text-sm block">
+                              {u.durationHours} <span className="text-[10px] font-bold text-slate-500">hrs</span>
+                            </span>
+                          </td>
+
+                          <td className="py-3.5 px-4">
+                            <span className="font-bold text-slate-800 block text-xs">{u.operatorName || 'Assigned Operator'}</span>
+                            {u.operatorPhone && (
+                              <span className="text-[10px] text-slate-400 block font-mono">{u.operatorPhone}</span>
+                            )}
+                          </td>
+
+                          <td className="py-3.5 px-4">
+                            {u.shiftId ? (
+                              <span className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 font-mono text-[10px] font-bold border border-indigo-200 block w-fit">
+                                {u.shiftId}
+                              </span>
+                            ) : u.transactionId ? (
+                              <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-mono text-[10px] font-bold border border-slate-200 block w-fit">
+                                TX #{u.transactionId}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 text-[10px]">Direct Log</span>
+                            )}
+                            {u.remarks && (
+                              <span className="text-[9px] text-slate-400 block mt-0.5 max-w-[150px] truncate" title={u.remarks}>
+                                {u.remarks}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td colSpan={8} className="py-14 text-center">
+                        <div className="max-w-sm mx-auto space-y-2">
+                          <Wrench size={32} className="text-slate-300 mx-auto" />
+                          <h4 className="text-sm font-bold text-slate-800">No Equipment Utilization Records Found</h4>
+                          <p className="text-xs text-slate-400">
+                            No heavy machinery operations matched your filter criteria for this project.
+                          </p>
+                        </div>
                       </td>
                     </tr>
                   )}

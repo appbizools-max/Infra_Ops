@@ -5,7 +5,7 @@ import {
   ChevronRight, Calendar, AlertCircle, Info, X, ShieldCheck, Gauge,
   Activity, Layers, Building2, Package, Sparkles, Trash2, UserCheck,
   Fuel, Navigation, Compass, Sliders, Settings2, ArrowUpRight, Check,
-  Maximize2
+  Maximize2, Warehouse, ArrowUp, ArrowDown, Scale
 } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
 import { apiFetch } from '../../../lib/api';
@@ -25,6 +25,14 @@ interface CorridorLeg {
   transshipmentRequired: boolean;
   leadTransporter?: string;
   allowedShrinkagePercent?: number;
+  isStockyard?: boolean;
+  stockyardId?: number;
+  stockyardCode?: string;
+  stockyardLocation?: string;
+  divisionName?: string;
+  plannedMaterial?: string;
+  plannedQuantity?: number;
+  plannedUnit?: string;
 }
 
 interface CorridorAsset {
@@ -69,6 +77,17 @@ interface IntermediateStop {
   id: string;
   name: string;
   type: string;
+  isStockyard?: boolean;
+  stockyardId?: number;
+  stockyardCode?: string;
+  stockyardLocation?: string;
+  divisionName?: string;
+  plannedMaterial?: string;
+  plannedQuantity?: number;
+  plannedUnit?: string;
+  actualReceived?: number;
+  actualIssued?: number;
+  actualAvailable?: number;
   transportMode: 'Road' | 'Rail';
   distanceKm: number;
   estimatedTatHours: number;
@@ -209,6 +228,64 @@ export default function OperationsCorridorsPage() {
     return filtered.length > 0 ? filtered : worksitesList;
   }, [worksitesList, selectedProjectId, selectedProjectName]);
 
+  const [isSchematicExpanded, setIsSchematicExpanded] = useState(false);
+
+  // Dynamic Route Sequence Schematic Nodes for Corridor Preview
+  const previewNodes = useMemo(() => {
+    const list: Array<{
+      id: string;
+      label: string;
+      title: string;
+      subtitle: string;
+      status: 'confirmed' | 'pending' | 'stockyard' | 'pending_yard' | 'waypoint';
+      type: 'origin' | 'destination' | 'stockyard' | 'waypoint';
+      x: number;
+    }> = [];
+
+    // 1. Origin Station
+    list.push({
+      id: 'origin',
+      label: 'A',
+      title: 'Origin station',
+      subtitle: originWorksite || 'Select project worksite',
+      status: originWorksite ? 'confirmed' : 'pending',
+      type: 'origin',
+      x: 44
+    });
+
+    // 2. Intermediate Stops
+    stops.forEach((s, idx) => {
+      const isYard = s.isStockyard || s.type === 'Stockyard Hub';
+      const isPendingYard = isYard && !s.stockyardId;
+      // Alternate horizontal step offset: stop 0 (x=165), stop 1 (x=44), stop 2 (x=165), etc.
+      const isIndented = idx % 2 === 0;
+      list.push({
+        id: s.id,
+        label: String(idx + 1),
+        title: isPendingYard ? 'Stockyard pending' : s.name,
+        subtitle: isPendingYard
+          ? 'No registered record selected'
+          : (isYard ? `${s.stockyardCode || 'Stockyard'} · ${s.stockyardLocation || 'Buffer Hub'}` : s.type),
+        status: isPendingYard ? 'pending_yard' : (isYard ? 'stockyard' : 'waypoint'),
+        type: isYard ? 'stockyard' : 'waypoint',
+        x: isIndented ? 165 : 44
+      });
+    });
+
+    // 3. Destination Station
+    list.push({
+      id: 'destination',
+      label: 'B',
+      title: 'Destination station',
+      subtitle: destinationWorksite || 'Select project worksite',
+      status: destinationWorksite ? 'confirmed' : 'pending',
+      type: 'destination',
+      x: 44
+    });
+
+    return list;
+  }, [originWorksite, destinationWorksite, stops]);
+
   // Strict Filter: Only vehicles with an assigned driver can be selected
   const assignedDriverVehicles = useMemo(() => {
     return vehiclesList.filter(v => {
@@ -336,21 +413,88 @@ export default function OperationsCorridorsPage() {
     setModePromptModal(null);
   };
 
-  const handleAddStop = () => {
+  const handleAddStop = (asStockyard = false, insertAtIndex?: number) => {
     const newIdx = stops.length + 1;
-    const defaultStopName = `Transit Siding / Transshipment Hub ${newIdx}`;
+    let newStop: IntermediateStop;
+    if (asStockyard && stockyardsList.length > 0) {
+      const firstYard = stockyardsList[0];
+      const projMat = projectsList.find(p => (p.project_id || p.id?.toString()) === selectedProjectId)?.commodity || 'Track Ballast 40mm';
+      newStop = {
+        id: 'stop-' + Date.now(),
+        name: firstYard.yardName,
+        type: 'Stockyard Hub',
+        isStockyard: true,
+        stockyardId: firstYard.id,
+        stockyardCode: firstYard.yardCode || `YRD-${firstYard.id}`,
+        stockyardLocation: firstYard.location || 'Central Stockyard Hub',
+        divisionName: firstYard.divisionName || firstYard.division_name || 'Infrastructure Division',
+        plannedMaterial: projMat,
+        plannedQuantity: 50,
+        plannedUnit: 'MT',
+        actualReceived: 0,
+        actualIssued: 0,
+        actualAvailable: 0,
+        transportMode: 'Road',
+        distanceKm: 35.0,
+        estimatedTatHours: 2.5,
+        transshipmentRequired: true,
+        leadTransporter: 'InfraOps Dedicated Fleet'
+      };
+    } else {
+      const defaultStopName = `Transit Siding / Transshipment Hub ${newIdx}`;
+      newStop = {
+        id: 'stop-' + Date.now(),
+        name: defaultStopName,
+        type: newIdx % 2 === 1 ? 'Transshipment Hub' : 'Rail Siding',
+        isStockyard: false,
+        transportMode: newIdx % 2 === 1 ? 'Rail' : 'Road',
+        distanceKm: 45.0,
+        estimatedTatHours: 3.0,
+        transshipmentRequired: true,
+        leadTransporter: newIdx % 2 === 1 ? 'Indian Railways / DFCC' : 'InfraOps Dedicated Fleet'
+      };
+    }
 
-    const newStop: IntermediateStop = {
-      id: 'stop-' + Date.now(),
-      name: defaultStopName,
-      type: newIdx % 2 === 1 ? 'Transshipment Hub' : 'Rail Siding',
-      transportMode: newIdx % 2 === 1 ? 'Rail' : 'Road',
-      distanceKm: 45.0,
-      estimatedTatHours: 3.0,
-      transshipmentRequired: true,
-      leadTransporter: newIdx % 2 === 1 ? 'Indian Railways / DFCC' : 'InfraOps Dedicated Fleet'
-    };
-    setStops([...stops, newStop]);
+    setStops(prev => {
+      if (insertAtIndex !== undefined && insertAtIndex >= 0 && insertAtIndex <= prev.length) {
+        const copy = [...prev];
+        copy.splice(insertAtIndex, 0, newStop);
+        return copy;
+      }
+      return [...prev, newStop];
+    });
+  };
+
+  const handleSwapOriginDestination = () => {
+    const tempW = originWorksite;
+    const tempT = originType;
+    setOriginWorksite(destinationWorksite);
+    setOriginType(destinationType);
+    setDestinationWorksite(tempW);
+    setDestinationType(tempT);
+    showToast('Swapped Start (Loading Point) and End (Unloading Point) Worksites.');
+  };
+
+  const handleMoveStopUp = (index: number) => {
+    if (index <= 0) return;
+    setStops(prev => {
+      const nextStops = [...prev];
+      const temp = nextStops[index];
+      nextStops[index] = nextStops[index - 1];
+      nextStops[index - 1] = temp;
+      return nextStops;
+    });
+  };
+
+  const handleMoveStopDown = (index: number) => {
+    if (index >= stops.length - 1) return;
+    setStops(prev => {
+      const nextStops = [...prev];
+      const temp = nextStops[index];
+      nextStops[index] = nextStops[index + 1];
+      nextStops[index + 1] = temp;
+      return nextStops;
+    });
   };
 
   const handleRemoveStop = (id: string) => {
@@ -497,18 +641,27 @@ export default function OperationsCorridorsPage() {
         totalTat += originLegTat;
       } else {
         // Leg 1: Origin ➔ Stop 1
+        const s1 = stops[0];
         generatedLegs.push({
           legSequence: 1,
-          legName: `Leg 1: Haulage to ${stops[0].name}`,
+          legName: `Leg 1: Haulage to ${s1.name}`,
           originName: originWorksite,
           originType: originType,
-          destinationName: stops[0].name,
-          destinationType: stops[0].type,
+          destinationName: s1.name,
+          destinationType: s1.type,
           transportMode: originLegMode,
           distanceKm: originLegDistance,
           estimatedTatHours: originLegTat,
-          transshipmentRequired: stops[0].transshipmentRequired,
-          leadTransporter: originLegMode === 'Rail' ? 'Indian Railways / DFCC' : 'InfraOps Road Fleet'
+          transshipmentRequired: s1.transshipmentRequired,
+          leadTransporter: originLegMode === 'Rail' ? 'Indian Railways / DFCC' : 'InfraOps Road Fleet',
+          isStockyard: s1.isStockyard || s1.type === 'Stockyard Hub',
+          stockyardId: s1.stockyardId || null,
+          stockyardCode: s1.stockyardCode || null,
+          stockyardLocation: s1.stockyardLocation || null,
+          divisionName: s1.divisionName || null,
+          plannedMaterial: s1.plannedMaterial || null,
+          plannedQuantity: s1.plannedQuantity || null,
+          plannedUnit: s1.plannedUnit || 'MT'
         });
         totalDist += originLegDistance;
         totalTat += originLegTat;
@@ -528,7 +681,15 @@ export default function OperationsCorridorsPage() {
             distanceKm: curr.distanceKm,
             estimatedTatHours: curr.estimatedTatHours,
             transshipmentRequired: next.transshipmentRequired,
-            leadTransporter: curr.leadTransporter || (curr.transportMode === 'Rail' ? 'Indian Railways / DFCC' : 'InfraOps Logistics')
+            leadTransporter: curr.leadTransporter || (curr.transportMode === 'Rail' ? 'Indian Railways / DFCC' : 'InfraOps Logistics'),
+            isStockyard: next.isStockyard || next.type === 'Stockyard Hub',
+            stockyardId: next.stockyardId || null,
+            stockyardCode: next.stockyardCode || null,
+            stockyardLocation: next.stockyardLocation || null,
+            divisionName: next.divisionName || null,
+            plannedMaterial: next.plannedMaterial || null,
+            plannedQuantity: next.plannedQuantity || null,
+            plannedUnit: next.plannedUnit || 'MT'
           });
           totalDist += curr.distanceKm;
           totalTat += curr.estimatedTatHours;
@@ -576,7 +737,9 @@ export default function OperationsCorridorsPage() {
           legs: generatedLegs,
           assets: assignedFleet,
           syncProjectTransportModes: syncProjectTransportModes,
-          transportModes: selectedTransportModes
+          transportModes: selectedTransportModes,
+          stops: stops,
+          stockyardStops: stops.filter(s => s.isStockyard || s.stockyardId)
         })
       });
 
@@ -1210,31 +1373,43 @@ export default function OperationsCorridorsPage() {
 
                 {/* SECTION 3: WORKSITE STATIONS & DYNAMIC INTERMEDIATE STOPS */}
                 <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
                     <div>
                       <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-slate-900">
                         <Compass size={16} className="text-[#00705a]" />
                         <span>3. Worksite Stations & Intermediate Stops</span>
                       </div>
                       <p className="text-[11px] text-slate-500 mt-0.5">
-                        Origin & Destination select strictly from project worksites. Intermediate stops are lightweight waypoints.
+                        Define sequential haulage route: Origin pit, midway stockyards or sidings, and destination delivery site.
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={handleAddStop}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-[#00705a] border border-emerald-200 rounded-xl text-xs font-bold transition-all shadow-2xs"
-                    >
-                      <Plus size={14} />
-                      <span>Add Stop</span>
-                    </button>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleAddStop(true)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-[#00705a] hover:bg-[#005a48] text-white rounded-xl text-xs font-bold transition-all shadow-xs"
+                        title="Add a registered stockyard buffer hub as an intermediate stop"
+                      >
+                        <Warehouse size={14} />
+                        <span>+ Add Stockyard Stop</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleAddStop(false)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition-all shadow-2xs"
+                      >
+                        <Plus size={14} />
+                        <span>+ Add Siding</span>
+                      </button>
+                    </div>
                   </div>
 
-                  {/* STATION A: ORIGIN (LOADING POINT) - PROJECT WORKSITES ONLY */}
+                  {/* STATION A: ORIGIN (LOADING POINT) */}
                   <div className="p-4 rounded-2xl bg-amber-50/40 border border-amber-200/90 space-y-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-lg bg-amber-500 text-white flex items-center justify-center font-black text-xs">
+                        <div className="w-6 h-6 rounded-lg bg-amber-500 text-white flex items-center justify-center font-black text-xs shadow-xs">
                           A
                         </div>
                         <span className="text-xs font-black text-amber-900 uppercase tracking-wider">
@@ -1247,7 +1422,6 @@ export default function OperationsCorridorsPage() {
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                      {/* Origin Worksite Dropdown (Filtered strictly by Project) */}
                       <div>
                         <label className="font-bold text-slate-700 mb-1 block">Worksite / Loading Bay</label>
                         <select
@@ -1271,7 +1445,6 @@ export default function OperationsCorridorsPage() {
                         </select>
                       </div>
 
-                      {/* Origin Type */}
                       <div>
                         <label className="font-bold text-slate-700 mb-1 block">Worksite Classification</label>
                         <select
@@ -1290,49 +1463,53 @@ export default function OperationsCorridorsPage() {
                     {/* Mode to next stop & distance */}
                     <div className="pt-2 border-t border-amber-200/60 flex flex-wrap items-center justify-between gap-3 text-xs">
                       <div className="flex items-center gap-2">
-                        <span className="text-[11px] font-bold text-slate-600">Mode to next station:</span>
-                        <button
-                          type="button"
-                          onClick={() => setOriginLegMode('Road')}
-                          className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${originLegMode === 'Road'
-                              ? 'bg-[#00705a] text-white font-black shadow-xs'
-                              : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                        <span className="text-[11px] font-bold text-slate-600">Transit Mode to next station:</span>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setOriginLegMode('Road')}
+                            className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                              originLegMode === 'Road'
+                                ? 'bg-[#00705a] text-white font-black shadow-xs'
+                                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
                             }`}
-                        >
-                          <Truck size={12} /> Road
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setOriginLegMode('Rail')}
-                          className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${originLegMode === 'Rail'
-                              ? 'bg-blue-600 text-white font-black shadow-xs'
-                              : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                          >
+                            <Truck size={13} /> Road
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setOriginLegMode('Rail')}
+                            className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                              originLegMode === 'Rail'
+                                ? 'bg-blue-600 text-white font-black shadow-xs'
+                                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
                             }`}
-                        >
-                          <Train size={12} /> Rail
-                        </button>
+                          >
+                            <Train size={13} /> Rail
+                          </button>
+                        </div>
                       </div>
 
                       <div className="flex items-center gap-3">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-slate-600 font-semibold text-[11px]">Distance:</span>
+                        <div className="flex items-center gap-1">
+                          <span className="text-slate-500 text-[11px] font-semibold">Distance:</span>
                           <input
                             type="number"
                             step="0.1"
                             value={originLegDistance}
                             onChange={e => setOriginLegDistance(parseFloat(e.target.value) || 0)}
-                            className="w-16 p-1 bg-white border border-amber-200 rounded-lg text-center font-bold text-slate-900"
+                            className="w-16 p-1.5 bg-white border border-amber-200 rounded-lg text-center font-bold text-slate-900 focus:outline-none"
                           />
                           <span className="text-slate-500 font-bold text-[10px]">KM</span>
                         </div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-slate-600 font-semibold text-[11px]">TAT:</span>
+                        <div className="flex items-center gap-1">
+                          <span className="text-slate-500 text-[11px] font-semibold">TAT:</span>
                           <input
                             type="number"
                             step="0.5"
                             value={originLegTat}
                             onChange={e => setOriginLegTat(parseFloat(e.target.value) || 0)}
-                            className="w-14 p-1 bg-white border border-amber-200 rounded-lg text-center font-bold text-slate-900"
+                            className="w-14 p-1.5 bg-white border border-amber-200 rounded-lg text-center font-bold text-slate-900 focus:outline-none"
                           />
                           <span className="text-slate-500 font-bold text-[10px]">Hrs</span>
                         </div>
@@ -1340,143 +1517,296 @@ export default function OperationsCorridorsPage() {
                     </div>
                   </div>
 
-                  {/* DYNAMIC INTERMEDIATE STOPS (WAYPOINTS / SIDINGS) */}
-                  {stops.map((stop, sIdx) => (
-                    <div
-                      key={stop.id}
-                      className="p-4 rounded-2xl bg-blue-50/40 border border-blue-200/90 space-y-3 animate-in fade-in duration-150"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-lg bg-blue-600 text-white flex items-center justify-center font-black text-xs">
-                            {sIdx + 1}
-                          </div>
-                          <span className="text-xs font-black text-blue-900 uppercase tracking-wider">
-                            Intermediate Stop {sIdx + 1}: {stop.name}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-bold text-blue-800 bg-blue-100/80 px-2 py-0.5 rounded-md border border-blue-200">
-                            {stop.type}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveStop(stop.id)}
-                            className="p-1 text-slate-400 hover:text-red-500 rounded-lg transition-colors"
-                            title="Remove stop"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                        {/* Stop Location Name / Waypoint */}
-                        <div>
-                          <label className="font-bold text-slate-700 mb-1 block">Stop Name / Waypoint</label>
-                          <input
-                            type="text"
-                            value={stop.name}
-                            onChange={e => handleUpdateStop(stop.id, { name: e.target.value })}
-                            placeholder="e.g., Satna Rail Siding / Buffer Depot..."
-                            className="w-full p-2.5 bg-white border border-blue-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-semibold text-slate-900"
-                          />
-                        </div>
-
-                        {/* Stop Classification */}
-                        <div>
-                          <label className="font-bold text-slate-700 mb-1 block">Stop Classification</label>
-                          <select
-                            value={stop.type}
-                            onChange={e => handleUpdateStop(stop.id, { type: e.target.value })}
-                            className="w-full p-2.5 bg-white border border-blue-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-medium text-slate-900"
-                          >
-                            <option value="Transshipment Hub">Transshipment Hub (Mode Transfer)</option>
-                            <option value="Rail Siding">Dedicated DFCC Rail Siding</option>
-                            <option value="Weighbridge Hub">Weighbridge & Quality Inspection Hub</option>
-                            <option value="Fuel / Safety Bay">Midway Fuel & Safety Bay</option>
-                          </select>
-                        </div>
-                      </div>
-
-                      {/* Mode & Leg Parameters */}
-                      <div className="pt-2 border-t border-blue-200/60 flex flex-wrap items-center justify-between gap-3 text-xs">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[11px] font-bold text-slate-600">Mode leading to this stop:</span>
-                          <button
-                            type="button"
-                            onClick={() => handleUpdateStop(stop.id, { transportMode: 'Road' })}
-                            className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${stop.transportMode === 'Road'
-                                ? 'bg-[#00705a] text-white font-black shadow-xs'
-                                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                  {/* DYNAMIC INTERMEDIATE STOPS */}
+                  {stops.map((stop, sIdx) => {
+                    const isYard = stop.isStockyard || stop.type === 'Stockyard Hub';
+                    return (
+                      <div
+                        key={stop.id}
+                        className={`p-4 rounded-2xl border space-y-3 transition-all shadow-2xs animate-in fade-in duration-150 ${
+                          isYard ? 'bg-emerald-50/40 border-emerald-300' : 'bg-blue-50/40 border-blue-200/90'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <div
+                              className={`w-6 h-6 rounded-lg text-white flex items-center justify-center font-black text-xs shadow-xs ${
+                                isYard ? 'bg-[#00705a]' : 'bg-blue-600'
                               }`}
-                          >
-                            <Truck size={12} /> Road
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleUpdateStop(stop.id, { transportMode: 'Rail' })}
-                            className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${stop.transportMode === 'Rail'
-                                ? 'bg-blue-600 text-white font-black shadow-xs'
-                                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                            >
+                              {sIdx + 1}
+                            </div>
+                            <span className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                              {isYard ? <Warehouse size={13} className="text-[#00705a]" /> : <Route size={13} className="text-blue-600" />}
+                              <span>Intermediate Stop {sIdx + 1}: {stop.name}</span>
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            {/* Reorder Buttons */}
+                            <button
+                              type="button"
+                              onClick={() => handleMoveStopUp(sIdx)}
+                              disabled={sIdx === 0}
+                              title="Move Stop Up"
+                              className="p-1 text-slate-500 hover:text-slate-900 bg-white hover:bg-slate-100 rounded border border-slate-200 disabled:opacity-30 disabled:cursor-not-allowed"
+                            >
+                              <ArrowUp size={12} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleMoveStopDown(sIdx)}
+                              disabled={sIdx === stops.length - 1}
+                              title="Move Stop Down"
+                              className="p-1 text-slate-500 hover:text-slate-900 bg-white hover:bg-slate-100 rounded border border-slate-200 disabled:opacity-30 disabled:cursor-not-allowed"
+                            >
+                              <ArrowDown size={12} />
+                            </button>
+
+                            <span
+                              className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${
+                                isYard
+                                  ? 'bg-emerald-100 text-[#00705a] border-emerald-300 font-black'
+                                  : 'bg-blue-100 text-blue-800 border-blue-200'
                               }`}
-                          >
-                            <Train size={12} /> DFCC Rail
-                          </button>
+                            >
+                              {isYard ? 'Stockyard Hub' : stop.type}
+                            </span>
+
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveStop(stop.id)}
+                              className="p-1 text-slate-400 hover:text-red-500 rounded hover:bg-white transition-colors ml-1"
+                              title="Remove stop"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
                         </div>
 
-                        <div className="flex items-center gap-3">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-slate-600 font-semibold text-[11px]">Distance:</span>
-                            <input
-                              type="number"
-                              step="0.1"
-                              value={stop.distanceKm}
-                              onChange={e => handleUpdateStop(stop.id, { distanceKm: parseFloat(e.target.value) || 0 })}
-                              className="w-16 p-1 bg-white border border-blue-200 rounded-lg text-center font-bold text-slate-900"
-                            />
-                            <span className="text-slate-500 font-bold text-[10px]">KM</span>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                          {/* If stockyard: Select registered stockyard from DB */}
+                          {isYard ? (
+                            <div>
+                              <label className="font-bold text-slate-700 mb-1 flex items-center justify-between">
+                                <span className="flex items-center gap-1.5">
+                                  <Warehouse size={12} className="text-[#00705a]" />
+                                  <span>Select Active Stockyard</span>
+                                </span>
+                                <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+                                  Stockyard Management DB
+                                </span>
+                              </label>
+                              <select
+                                value={stop.stockyardId || ''}
+                                onChange={e => {
+                                  const chosenId = parseInt(e.target.value, 10);
+                                  const y = stockyardsList.find(item => item.id === chosenId);
+                                  if (y) {
+                                    handleUpdateStop(stop.id, {
+                                      name: y.yardName,
+                                      type: 'Stockyard Hub',
+                                      isStockyard: true,
+                                      stockyardId: y.id,
+                                      stockyardCode: y.yardCode || `YRD-${y.id}`,
+                                      stockyardLocation: y.location || 'Central Stockyard Hub',
+                                      divisionName: y.divisionName || y.division_name || 'Infrastructure Division',
+                                      plannedMaterial: stop.plannedMaterial || 'Track Ballast 40mm',
+                                      plannedQuantity: stop.plannedQuantity || 50,
+                                      plannedUnit: 'MT'
+                                    });
+                                  }
+                                }}
+                                className="w-full p-2.5 bg-white border border-emerald-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 font-bold text-slate-900"
+                              >
+                                <option value="">-- Choose Registered Stockyard --</option>
+                                {stockyardsList.map(y => (
+                                  <option key={y.id} value={y.id}>
+                                    {y.yardName} ({y.yardCode || ('YRD-' + y.id)}) — {y.location || 'Hub'}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          ) : (
+                            <div>
+                              <label className="font-bold text-slate-700 mb-1 block">Stop Name / Waypoint</label>
+                              <input
+                                type="text"
+                                value={stop.name}
+                                onChange={e => handleUpdateStop(stop.id, { name: e.target.value })}
+                                placeholder="e.g., Satna Rail Siding / Buffer Depot..."
+                                className="w-full p-2.5 bg-white border border-blue-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-semibold text-slate-900"
+                              />
+                            </div>
+                          )}
+
+                          <div>
+                            <label className="font-bold text-slate-700 mb-1 block">Stop Classification</label>
+                            <select
+                              value={stop.type}
+                              onChange={e => {
+                                const newType = e.target.value;
+                                if (newType === 'Stockyard Hub') {
+                                  const firstYard = stockyardsList[0];
+                                  handleUpdateStop(stop.id, {
+                                    type: newType,
+                                    isStockyard: true,
+                                    stockyardId: firstYard?.id,
+                                    stockyardCode: firstYard?.yardCode || (firstYard?.id ? `YRD-${firstYard.id}` : undefined),
+                                    name: firstYard?.yardName || stop.name,
+                                    stockyardLocation: firstYard?.location || 'Central Stockyard Hub',
+                                    divisionName: firstYard?.divisionName || firstYard?.division_name || 'Infrastructure Division',
+                                    plannedMaterial: stop.plannedMaterial || 'Track Ballast 40mm',
+                                    plannedQuantity: stop.plannedQuantity || 50
+                                  });
+                                } else {
+                                  handleUpdateStop(stop.id, { type: newType, isStockyard: false });
+                                }
+                              }}
+                              className="w-full p-2.5 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-semibold text-slate-900"
+                            >
+                              <option value="Stockyard Hub">🏢 Stockyard Hub (Buffer Storage & Management)</option>
+                              <option value="Transshipment Hub">Transshipment Hub (Mode Transfer)</option>
+                              <option value="Rail Siding">Dedicated DFCC Rail Siding</option>
+                              <option value="Weighbridge Hub">Weighbridge & Quality Inspection Hub</option>
+                              <option value="Fuel / Safety Bay">Midway Fuel & Safety Bay</option>
+                            </select>
                           </div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-slate-600 font-semibold text-[11px]">TAT:</span>
-                            <input
-                              type="number"
-                              step="0.5"
-                              value={stop.estimatedTatHours}
-                              onChange={e => handleUpdateStop(stop.id, { estimatedTatHours: parseFloat(e.target.value) || 0 })}
-                              className="w-14 p-1 bg-white border border-blue-200 rounded-lg text-center font-bold text-slate-900"
-                            />
-                            <span className="text-slate-500 font-bold text-[10px]">Hrs</span>
+                        </div>
+
+                        {/* If Stockyard: Section 4 Info Panel */}
+                        {isYard && (
+                          <div className="bg-white/95 rounded-xl border border-emerald-200 p-3.5 space-y-2.5 text-xs">
+                            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-100 pb-2">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-[10px] bg-emerald-50 text-[#00705a] px-2 py-0.5 rounded font-bold border border-emerald-200">
+                                  {stop.stockyardCode || `YRD-${stop.stockyardId || 'AUTO'}`}
+                                </span>
+                                <span className="font-black text-slate-900">{stop.name}</span>
+                              </div>
+                              <span className="text-[11px] font-semibold text-slate-500 flex items-center gap-1">
+                                <Building2 size={12} className="text-slate-400" />
+                                <span>{stop.divisionName || 'Infrastructure Division'}</span>
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                              <div>
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Location</span>
+                                <span className="font-medium text-slate-700 truncate block mt-0.5">{stop.stockyardLocation || 'Central Hub'}</span>
+                              </div>
+                              <div>
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Planned Commodity</span>
+                                <input
+                                  type="text"
+                                  value={stop.plannedMaterial || 'Track Ballast 40mm'}
+                                  onChange={e => handleUpdateStop(stop.id, { plannedMaterial: e.target.value })}
+                                  className="w-full font-bold text-slate-800 bg-transparent border-b border-slate-200 focus:outline-none focus:border-[#00705a] mt-0.5"
+                                />
+                              </div>
+                              <div>
+                                <span className="text-[10px] font-black text-[#00705a] uppercase tracking-wider block">Planned Routing</span>
+                                <div className="flex items-center gap-1 mt-0.5">
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    value={stop.plannedQuantity ?? 50}
+                                    onChange={e => handleUpdateStop(stop.id, { plannedQuantity: parseFloat(e.target.value) || 0 })}
+                                    className="w-16 p-0.5 font-black text-slate-900 border border-emerald-300 rounded text-right focus:outline-none bg-emerald-50/50"
+                                  />
+                                  <span className="text-[10px] font-bold text-slate-500">MT</span>
+                                </div>
+                              </div>
+                              <div>
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Available Stock</span>
+                                <span className="font-black text-emerald-700 block mt-0.5">{(stop.actualAvailable || 0).toFixed(1)} MT</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Outbound leg to next stop */}
+                        <div className="pt-2 border-t border-slate-200/60 flex flex-wrap items-center justify-between gap-3 text-xs">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] font-bold text-slate-600">Transit Mode to next station:</span>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateStop(stop.id, { transportMode: 'Road' })}
+                                className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                  stop.transportMode === 'Road'
+                                    ? 'bg-[#00705a] text-white font-black shadow-xs'
+                                    : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                                }`}
+                              >
+                                <Truck size={13} /> Road
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateStop(stop.id, { transportMode: 'Rail' })}
+                                className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                  stop.transportMode === 'Rail'
+                                    ? 'bg-blue-600 text-white font-black shadow-xs'
+                                    : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                                }`}
+                              >
+                                <Train size={13} /> Rail
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-1">
+                              <span className="text-slate-500 text-[11px] font-semibold">Distance:</span>
+                              <input
+                                type="number"
+                                step="0.1"
+                                value={stop.distanceKm}
+                                onChange={e => handleUpdateStop(stop.id, { distanceKm: parseFloat(e.target.value) || 0 })}
+                                className="w-16 p-1.5 bg-white border border-slate-300 rounded-lg text-center font-bold text-slate-900 focus:outline-none"
+                              />
+                              <span className="text-slate-500 font-bold text-[10px]">KM</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className="text-slate-500 text-[11px] font-semibold">TAT:</span>
+                              <input
+                                type="number"
+                                step="0.5"
+                                value={stop.estimatedTatHours}
+                                onChange={e => handleUpdateStop(stop.id, { estimatedTatHours: parseFloat(e.target.value) || 0 })}
+                                className="w-14 p-1.5 bg-white border border-slate-300 rounded-lg text-center font-bold text-slate-900 focus:outline-none"
+                              />
+                              <span className="text-slate-500 font-bold text-[10px]">Hrs</span>
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
 
-                  {/* STATION B: DESTINATION (UNLOADING STATION) - PROJECT WORKSITES ONLY */}
+                  {/* STATION B: DESTINATION (UNLOADING POINT) */}
                   <div className="p-4 rounded-2xl bg-indigo-50/40 border border-indigo-200/90 space-y-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-black text-xs">
+                        <div className="w-6 h-6 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-black text-xs shadow-xs">
                           B
                         </div>
-                        <span className="text-xs font-black text-indigo-900 uppercase tracking-wider">
+                        <span className="text-xs font-black text-indigo-950 uppercase tracking-wider">
                           Unloading Station (Destination Delivery Site)
                         </span>
                       </div>
-                      <span className="text-[10px] font-bold text-indigo-800 bg-indigo-100/80 px-2 py-0.5 rounded-md border border-indigo-200">
+                      <span className="text-[10px] font-bold text-indigo-900 bg-indigo-100/80 px-2 py-0.5 rounded-md border border-indigo-200">
                         Project Worksite Destination
                       </span>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                      {/* Destination Worksite Dropdown (Filtered by Project) */}
                       <div>
-                        <label className="font-bold text-slate-700 mb-1 block">Worksite / Unloading Station</label>
+                        <label className="font-bold text-slate-700 mb-1 block">Delivery Worksite / Station</label>
                         <select
                           value={destinationWorksite}
                           onChange={e => setDestinationWorksite(e.target.value)}
-                          className="w-full p-2.5 bg-white border border-indigo-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 font-semibold text-slate-900"
+                          className="w-full p-2.5 bg-white border border-indigo-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 font-bold text-slate-900"
                         >
                           {projectWorksites.map(w => (
                             <option key={w.id} value={w.name}>
@@ -1494,7 +1824,6 @@ export default function OperationsCorridorsPage() {
                         </select>
                       </div>
 
-                      {/* Destination Classification */}
                       <div>
                         <label className="font-bold text-slate-700 mb-1 block">Station Classification</label>
                         <select
@@ -1510,41 +1839,6 @@ export default function OperationsCorridorsPage() {
                       </div>
                     </div>
                   </div>
-
-                  {/* LIVE VECTOR PIPELINE RIBBON (WHITE THEME) */}
-                  <div className="bg-slate-100/90 text-slate-900 rounded-2xl p-4 border border-slate-200 space-y-2">
-                    <div className="flex items-center justify-between text-[11px] font-bold text-slate-600">
-                      <span className="flex items-center gap-1.5 text-[#00705a]">
-                        <Sparkles size={13} /> Visual Operations Corridor Blueprint
-                      </span>
-                      <span>
-                        {originLegDistance + stops.reduce((a, b) => a + (b.distanceKm || 0), 0)} KM Total · ~
-                        {(originLegTat + stops.reduce((a, b) => a + (b.estimatedTatHours || 0), 0)).toFixed(1)}h Turnaround
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 overflow-x-auto py-1 text-xs">
-                      <span className="bg-amber-100 text-amber-900 px-3 py-1.5 rounded-xl border border-amber-200 shrink-0 font-bold flex items-center gap-1.5">
-                        <MapPin size={12} className="text-amber-600" />
-                        {originWorksite || 'Origin'}
-                      </span>
-                      <ArrowRight size={14} className="text-slate-400 shrink-0" />
-                      {stops.map(s => (
-                        <React.Fragment key={s.id}>
-                          <span className="bg-blue-100 text-blue-900 px-3 py-1.5 rounded-xl border border-blue-200 shrink-0 flex items-center gap-1.5 font-bold">
-                            {s.transportMode === 'Rail' ? <Train size={12} className="text-blue-600" /> : <Truck size={12} className="text-emerald-600" />}
-                            {s.name}
-                          </span>
-                          <ArrowRight size={14} className="text-slate-400 shrink-0" />
-                        </React.Fragment>
-                      ))}
-                      <span className="bg-indigo-100 text-indigo-900 px-3 py-1.5 rounded-xl border border-indigo-200 shrink-0 font-bold flex items-center gap-1.5">
-                        <Building2 size={12} className="text-indigo-600" />
-                        {destinationWorksite || 'Destination'}
-                      </span>
-                    </div>
-                  </div>
-
                 </div>
 
               </div>
@@ -1553,6 +1847,125 @@ export default function OperationsCorridorsPage() {
               {/* RIGHT COLUMN: LEADERSHIP & FLEET COMMITMENT (5 Cols)         */}
               {/* ─────────────────────────────────────────────────────────── */}
               <div className="lg:col-span-5 space-y-6">
+
+                {/* ─────────────────────────────────────────────────────────── */}
+                {/* CORRIDOR PREVIEW SCHEMATIC (DRAFT ROUTE VISUALIZATION)     */}
+                {/* ─────────────────────────────────────────────────────────── */}
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                  {/* Card Header */}
+                  <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-white">
+                    <h3 className="text-base font-bold text-slate-900 tracking-tight">Corridor preview</h3>
+                    <span className="px-2.5 py-1 text-xs font-semibold text-slate-600 bg-slate-100 rounded-lg border border-slate-200">
+                      Draft route
+                    </span>
+                  </div>
+
+                  {/* Dark Blueprint Grid Canvas */}
+                  <div
+                    className="p-4 bg-[#0a1822] text-white relative select-none"
+                    style={{
+                      backgroundImage: 'linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px)',
+                      backgroundSize: '24px 24px'
+                    }}
+                  >
+                    {/* Header inside schematic */}
+                    <div className="flex items-center justify-between text-[10px] font-mono font-bold tracking-widest text-slate-400 mb-4">
+                      <span>ROUTE SEQUENCE / SCHEMATIC</span>
+                      <button
+                        type="button"
+                        onClick={() => setIsSchematicExpanded(!isSchematicExpanded)}
+                        className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition-colors"
+                        title={isSchematicExpanded ? 'Collapse' : 'Expand full schematic'}
+                      >
+                        <Maximize2 size={13} />
+                      </button>
+                    </div>
+
+                    {/* Stepped Blueprint Schematic */}
+                    <div
+                      className="relative my-2 transition-all"
+                      style={{ height: `${previewNodes.length * 72 + 10}px` }}
+                    >
+                      {/* SVG Dashed Step Connectors */}
+                      <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ minWidth: '100%' }}>
+                        {previewNodes.slice(0, -1).map((curr, idx) => {
+                          const next = previewNodes[idx + 1];
+                          const startX = curr.x;
+                          const startY = 28 + idx * 72;
+                          const endX = next.x;
+                          const endY = 28 + (idx + 1) * 72;
+
+                          let pathD = '';
+                          if (startX === endX) {
+                            pathD = `M ${startX} ${startY + 15} V ${endY - 15}`;
+                          } else {
+                            const midY = (startY + endY) / 2;
+                            pathD = `M ${startX} ${startY + 15} V ${midY} H ${endX} V ${endY - 15}`;
+                          }
+
+                          const isPending = next.status === 'pending_yard';
+                          return (
+                            <path
+                              key={`link-${idx}`}
+                              d={pathD}
+                              fill="none"
+                              stroke={isPending ? '#f59e0b' : '#34d399'}
+                              strokeWidth="2"
+                              strokeDasharray="4 4"
+                              strokeOpacity={isPending ? 0.9 : 0.75}
+                            />
+                          );
+                        })}
+                      </svg>
+
+                      {/* Nodes with Badges and Labels */}
+                      {previewNodes.map((node, idx) => {
+                        const centerY = 28 + idx * 72;
+                        const isPending = node.status === 'pending_yard';
+                        const isYard = node.status === 'stockyard';
+                        const isOriginOrDest = node.type === 'origin' || node.type === 'destination';
+
+                        let circleClass = 'bg-[#182635] border-2 border-slate-500 text-slate-200';
+                        if (isOriginOrDest) {
+                          circleClass = 'bg-[#064e3b] border-2 border-emerald-400 text-emerald-300';
+                        } else if (isPending) {
+                          circleClass = 'bg-[#451a03] border-2 border-amber-500 text-amber-300';
+                        } else if (isYard) {
+                          circleClass = 'bg-[#064e3b] border-2 border-emerald-400 text-emerald-300';
+                        }
+
+                        return (
+                          <div
+                            key={node.id}
+                            className="absolute flex items-center gap-3 transition-all"
+                            style={{
+                              top: `${centerY - 16}px`,
+                              left: `${node.x - 16}px`
+                            }}
+                          >
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs shrink-0 shadow-sm ${circleClass}`}>
+                              {node.label}
+                            </div>
+                            <div className="leading-tight pr-2">
+                              <div className={`font-bold text-xs truncate max-w-[190px] ${isPending ? 'text-amber-300' : 'text-white'}`}>
+                                {node.title}
+                              </div>
+                              <div className="text-[10px] text-slate-400 font-medium truncate max-w-[190px] mt-0.5">
+                                {node.subtitle}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Legend Notice */}
+                    <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center gap-2 text-[10px] text-slate-400 font-mono">
+                      <span className="w-4 h-0.5 bg-slate-500 inline-block shrink-0"></span>
+                      <span>Dashed connections are unconfirmed - not to scale</span>
+                    </div>
+                  </div>
+                </div>
 
                 {/* Panel 3: Project Head & Site In-Charge Assignment */}
                 <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">

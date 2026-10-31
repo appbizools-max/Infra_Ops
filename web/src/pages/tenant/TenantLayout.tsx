@@ -174,7 +174,7 @@ export default function TenantLayout() {
       icon: Route,
       isCollapsible: true,
       subItems: [
-        { name: 'Stockyard & Materials', path: '/tenant/stockyard', icon: Layers },
+        { name: 'Stockyard Management', path: '/tenant/stockyard', icon: Layers },
         { name: 'Operations Corridors & Sketch', path: '/tenant/operations-corridors', icon: Route },
         { name: 'Dispatch Waybills & Slips', path: '/tenant/dispatch-waybills', icon: Scale },
       ]
