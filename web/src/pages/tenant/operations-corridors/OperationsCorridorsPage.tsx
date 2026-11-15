@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Route, Milestone, MapPin, Truck, Train, Box, Plus, Search,
   RefreshCw, CheckCircle2, ArrowRight, ArrowRightLeft, Users, HardHat,
@@ -77,6 +78,7 @@ interface IntermediateStop {
   id: string;
   name: string;
   type: string;
+  activity?: 'LOADING' | 'UNLOADING' | 'TRANSIT';
   isStockyard?: boolean;
   stockyardId?: number;
   stockyardCode?: string;
@@ -88,12 +90,17 @@ interface IntermediateStop {
   actualReceived?: number;
   actualIssued?: number;
   actualAvailable?: number;
-  transportMode: 'Road' | 'Rail';
+  transportMode: 'Road' | 'Rail' | 'Waterway' | 'Conveyor' | string;
   distanceKm: number;
   estimatedTatHours: number;
   transshipmentRequired: boolean;
   leadTransporter: string;
 }
+
+const MODE_META: Record<string, { icon: any; activeClass: string }> = {
+  Road: { icon: Truck, activeClass: 'bg-[#00705a] text-white shadow-2xs' },
+  Rail: { icon: Train, activeClass: 'bg-blue-600 text-white shadow-2xs' }
+};
 
 interface AssignedFleetItem {
   id: string;
@@ -109,6 +116,7 @@ interface AssignedFleetItem {
 }
 
 export default function OperationsCorridorsPage() {
+  const navigate = useNavigate();
   const { currentUser } = useAuth();
   const [corridors, setCorridors] = useState<OperationsCorridor[]>([]);
   const [selectedCorridor, setSelectedCorridor] = useState<OperationsCorridor | null>(null);
@@ -151,9 +159,11 @@ export default function OperationsCorridorsPage() {
   // Loading Point (Origin) & Unloading Station (Destination)
   const [originWorksite, setOriginWorksite] = useState('Rewa Quarry Face (Loading Pit)');
   const [originType, setOriginType] = useState('Loading Pit');
+  const [originActivity, setOriginActivity] = useState<'LOADING' | 'UNLOADING' | 'TRANSIT'>('LOADING');
   const [destinationWorksite, setDestinationWorksite] = useState('Noida Sector-62 Metro Depot Site');
   const [destinationType, setDestinationType] = useState('Delivery Site');
-  const [originLegMode, setOriginLegMode] = useState<'Road' | 'Rail'>('Road');
+  const [destinationActivity, setDestinationActivity] = useState<'LOADING' | 'UNLOADING' | 'TRANSIT'>('UNLOADING');
+  const [originLegMode, setOriginLegMode] = useState<string>('Road');
   const [originLegDistance, setOriginLegDistance] = useState<number>(48.5);
   const [originLegTat, setOriginLegTat] = useState<number>(2.5);
 
@@ -163,6 +173,7 @@ export default function OperationsCorridorsPage() {
       id: 'stop-1',
       name: 'Satna Rail Siding & Freight Hub',
       type: 'Rail Siding',
+      activity: 'TRANSIT',
       transportMode: 'Rail',
       distanceKm: 680,
       estimatedTatHours: 18,
@@ -170,6 +181,20 @@ export default function OperationsCorridorsPage() {
       leadTransporter: 'Indian Railways / DFCC'
     }
   ]);
+
+  // Synchronize Section 3 route leg transit modes with Section 2 selected transport modes
+  useEffect(() => {
+    if (selectedTransportModes.length === 0) return;
+    if (!selectedTransportModes.some(m => m.toLowerCase() === originLegMode.toLowerCase())) {
+      setOriginLegMode(selectedTransportModes[0]);
+    }
+    setStops(prev => prev.map(s => {
+      if (!selectedTransportModes.some(m => m.toLowerCase() === (s.transportMode || '').toLowerCase())) {
+        return { ...s, transportMode: selectedTransportModes[0] };
+      }
+      return s;
+    }));
+  }, [selectedTransportModes]);
 
   // Project Leadership & Site Supervision
   const [projectHead, setProjectHead] = useState('');
@@ -229,9 +254,84 @@ export default function OperationsCorridorsPage() {
   }, [worksitesList, selectedProjectId, selectedProjectName]);
 
   const [isSchematicExpanded, setIsSchematicExpanded] = useState(false);
+  const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
+
+  // Search & Filter State for Table View
+  const [corridorSearch, setCorridorSearch] = useState('');
+  const [corridorProjectFilter, setCorridorProjectFilter] = useState('ALL');
+
+  const filteredCorridors = useMemo(() => {
+    return corridors.filter(c => {
+      const q = corridorSearch.toLowerCase().trim();
+      const matchesSearch = !q ||
+        (c.name || '').toLowerCase().includes(q) ||
+        (c.corridorCode || '').toLowerCase().includes(q) ||
+        (c.projectName || '').toLowerCase().includes(q) ||
+        (c.originSummary || '').toLowerCase().includes(q) ||
+        (c.destinationSummary || '').toLowerCase().includes(q) ||
+        (c.transshipmentHub || '').toLowerCase().includes(q);
+
+      const matchesProject = corridorProjectFilter === 'ALL' || c.projectId === corridorProjectFilter || (c.projectName || '').toLowerCase() === corridorProjectFilter.toLowerCase();
+
+      return matchesSearch && matchesProject;
+    });
+  }, [corridors, corridorSearch, corridorProjectFilter]);
 
   // Dynamic Route Sequence Schematic Nodes for Corridor Preview
   const previewNodes = useMemo(() => {
+    // 1. If viewing a saved corridor from directory table:
+    if (!isCreateCorridorOpen && selectedCorridor?.legs && selectedCorridor.legs.length > 0) {
+      const list: Array<{
+        id: string;
+        label: string;
+        title: string;
+        subtitle: string;
+        status: 'confirmed' | 'pending' | 'stockyard' | 'pending_yard' | 'waypoint';
+        type: 'origin' | 'destination' | 'stockyard' | 'waypoint';
+        x: number;
+      }> = [];
+
+      const cLegs = selectedCorridor.legs;
+      list.push({
+        id: 'origin',
+        label: 'A',
+        title: `Station A (${cLegs[0].originName})`,
+        subtitle: `${cLegs[0].originType || 'Loading Point'} · ${cLegs[0].transportMode || 'Road'}`,
+        status: 'confirmed',
+        type: 'origin',
+        x: 44
+      });
+
+      for (let i = 0; i < cLegs.length - 1; i++) {
+        const leg = cLegs[i];
+        const isIndented = i % 2 === 0;
+        const isYard = leg.isStockyard || (leg.destinationType || '').toLowerCase().includes('yard');
+        list.push({
+          id: `stop-${leg.id || i}`,
+          label: String(i + 1),
+          title: leg.destinationName,
+          subtitle: `${leg.destinationType || 'Transit Hub'} · ${leg.distanceKm || 0} KM (~${leg.estimatedTatHours || 0}h)`,
+          status: isYard ? 'stockyard' : 'waypoint',
+          type: isYard ? 'stockyard' : 'waypoint',
+          x: isIndented ? 165 : 44
+        });
+      }
+
+      const lastLeg = cLegs[cLegs.length - 1];
+      list.push({
+        id: 'destination',
+        label: 'B',
+        title: `Station B (${lastLeg.destinationName})`,
+        subtitle: `${lastLeg.destinationType || 'Delivery Site'} · Final Delivery`,
+        status: 'confirmed',
+        type: 'destination',
+        x: 44
+      });
+
+      return list;
+    }
+
+    // 2. Studio Draft Route:
     const list: Array<{
       id: string;
       label: string;
@@ -243,10 +343,11 @@ export default function OperationsCorridorsPage() {
     }> = [];
 
     // 1. Origin Station
+    const originActLabel = originActivity === 'LOADING' ? 'Loading In' : (originActivity === 'UNLOADING' ? 'Unload Out' : 'Transit Hub');
     list.push({
       id: 'origin',
       label: 'A',
-      title: 'Origin station',
+      title: `Station A (${originActLabel})`,
       subtitle: originWorksite || 'Select project worksite',
       status: originWorksite ? 'confirmed' : 'pending',
       type: 'origin',
@@ -259,13 +360,14 @@ export default function OperationsCorridorsPage() {
       const isPendingYard = isYard && !s.stockyardId;
       // Alternate horizontal step offset: stop 0 (x=165), stop 1 (x=44), stop 2 (x=165), etc.
       const isIndented = idx % 2 === 0;
+      const actLabel = s.activity === 'LOADING' ? 'Loading In' : (s.activity === 'UNLOADING' ? 'Unload Out' : 'Transit Hub');
       list.push({
         id: s.id,
         label: String(idx + 1),
-        title: isPendingYard ? 'Stockyard pending' : s.name,
+        title: isPendingYard ? 'Stockyard pending' : `${s.name} (${actLabel})`,
         subtitle: isPendingYard
           ? 'No registered record selected'
-          : (isYard ? `${s.stockyardCode || 'Stockyard'} · ${s.stockyardLocation || 'Buffer Hub'}` : s.type),
+          : (isYard ? `${s.stockyardCode || 'Stockyard'} · ${s.stockyardLocation || 'Buffer Hub'}` : (s.type || 'Transit Hub')),
         status: isPendingYard ? 'pending_yard' : (isYard ? 'stockyard' : 'waypoint'),
         type: isYard ? 'stockyard' : 'waypoint',
         x: isIndented ? 165 : 44
@@ -273,10 +375,11 @@ export default function OperationsCorridorsPage() {
     });
 
     // 3. Destination Station
+    const destActLabel = destinationActivity === 'UNLOADING' ? 'Unload Out' : (destinationActivity === 'LOADING' ? 'Loading In' : 'Transit Hub');
     list.push({
       id: 'destination',
       label: 'B',
-      title: 'Destination station',
+      title: `Station B (${destActLabel})`,
       subtitle: destinationWorksite || 'Select project worksite',
       status: destinationWorksite ? 'confirmed' : 'pending',
       type: 'destination',
@@ -284,7 +387,7 @@ export default function OperationsCorridorsPage() {
     });
 
     return list;
-  }, [originWorksite, destinationWorksite, stops]);
+  }, [isCreateCorridorOpen, selectedCorridor, originWorksite, destinationWorksite, stops, originActivity, destinationActivity]);
 
   // Strict Filter: Only vehicles with an assigned driver can be selected
   const assignedDriverVehicles = useMemo(() => {
@@ -293,7 +396,6 @@ export default function OperationsCorridorsPage() {
       return dName.length > 0;
     });
   }, [vehiclesList]);
-
   // Strict Filter: Only heavy equipment with an assigned operator can be selected
   const assignedOperatorEquipment = useMemo(() => {
     return equipmentList.filter(e => {
@@ -398,14 +500,50 @@ export default function OperationsCorridorsPage() {
     }
   };
 
-  const handleConfirmModeSync = (action: 'update_project' | 'corridor_only') => {
+  const handleConfirmModeSync = async (action: 'update_project' | 'corridor_only') => {
     if (!modePromptModal) return;
     const { mode } = modePromptModal;
     if (action === 'update_project') {
-      setProjectTransportModes(prev => [...new Set([...prev, mode])]);
+      const updatedModes = [...new Set([...projectTransportModes, mode])];
+      setProjectTransportModes(updatedModes);
       setSelectedTransportModes(prev => [...new Set([...prev, mode])]);
       setSyncProjectTransportModes(true);
-      showToast(`Updated Project Master & enabled ${mode} transport.`);
+
+      // 1. Immediately update in-memory projectsList cache
+      setProjectsList(prev => prev.map(p => {
+        if ((p.project_id || p.id?.toString()) === selectedProjectId) {
+          let od: any = {};
+          try {
+            od = typeof p.other_data === 'string' ? JSON.parse(p.other_data) : (p.other_data || {});
+          } catch (_) { od = {}; }
+          od.transportModes = updatedModes.join(', ');
+          return { ...p, other_data: od, transport_modes: updatedModes.join(', '), transportModes: updatedModes.join(', ') };
+        }
+        return p;
+      }));
+
+      // 2. Immediately persist to backend database (Project Master)
+      try {
+        const found = projectsList.find(p => (p.project_id || p.id?.toString()) === selectedProjectId);
+        let od: any = {};
+        if (found?.other_data) {
+          try {
+            od = typeof found.other_data === 'string' ? JSON.parse(found.other_data) : found.other_data;
+          } catch (_) { od = {}; }
+        }
+        od.transportModes = updatedModes.join(', ');
+        await apiFetch(`/api/tenant/projects/${selectedProjectId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            otherData: JSON.stringify(od)
+          })
+        });
+      } catch (err) {
+        console.warn('Backend sync for Project Master transport modes encountered an error:', err);
+      }
+
+      showToast(`Updated Project Master in database & enabled ${mode} transport.`);
     } else {
       setSelectedTransportModes(prev => [...new Set([...prev, mode])]);
       showToast(`Added ${mode} to this corridor blueprint only.`);
@@ -423,6 +561,7 @@ export default function OperationsCorridorsPage() {
         id: 'stop-' + Date.now(),
         name: firstYard.yardName,
         type: 'Stockyard Hub',
+        activity: 'TRANSIT',
         isStockyard: true,
         stockyardId: firstYard.id,
         stockyardCode: firstYard.yardCode || `YRD-${firstYard.id}`,
@@ -446,6 +585,7 @@ export default function OperationsCorridorsPage() {
         id: 'stop-' + Date.now(),
         name: defaultStopName,
         type: newIdx % 2 === 1 ? 'Transshipment Hub' : 'Rail Siding',
+        activity: 'TRANSIT',
         isStockyard: false,
         transportMode: newIdx % 2 === 1 ? 'Rail' : 'Road',
         distanceKm: 45.0,
@@ -468,11 +608,14 @@ export default function OperationsCorridorsPage() {
   const handleSwapOriginDestination = () => {
     const tempW = originWorksite;
     const tempT = originType;
+    const tempA = originActivity;
     setOriginWorksite(destinationWorksite);
     setOriginType(destinationType);
+    setOriginActivity(destinationActivity);
     setDestinationWorksite(tempW);
     setDestinationType(tempT);
-    showToast('Swapped Start (Loading Point) and End (Unloading Point) Worksites.');
+    setDestinationActivity(tempA);
+    showToast('Swapped Start and End Worksites & Activities.');
   };
 
   const handleMoveStopUp = (index: number) => {
@@ -600,6 +743,37 @@ export default function OperationsCorridorsPage() {
       }
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handlePreviewCorridor = async (c: OperationsCorridor) => {
+    await selectCorridor(c);
+    setIsPreviewModalOpen(true);
+  };
+
+  const handleOpenAssignModal = async (c: OperationsCorridor) => {
+    await selectCorridor(c);
+    setIsAssignAssetOpen(true);
+  };
+
+  const handleDeleteCorridor = async (id: number, name: string) => {
+    if (!window.confirm(`Are you sure you want to delete corridor "${name}"?`)) return;
+    try {
+      const res = await apiFetch(`/api/tenant/operations-corridors/${id}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        showToast(`Corridor "${name}" successfully deleted.`);
+        fetchCorridors(true);
+        if (selectedCorridor?.id === id) {
+          setSelectedCorridor(null);
+        }
+      } else {
+        alert('Failed to delete corridor.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Error deleting corridor.');
     }
   };
 
@@ -800,342 +974,229 @@ export default function OperationsCorridorsPage() {
         </div>
       )}
 
-      {/* CORRIDORS DIRECTORY & VISUAL INSPECTOR (WHEN STUDIO CLOSED) */}
+      {/* CORRIDORS DIRECTORY - CLEAN ENTERPRISE TABLE VIEW */}
       {!isCreateCorridorOpen && (
-        <>
-          {/* Header Banner */}
-          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 sm:p-7">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2.5">
-                  <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-[#00705a] flex items-center justify-center font-bold shadow-sm">
-                    <Route size={22} />
-                  </div>
-                  <div>
-                    <h1 className="text-2xl font-black text-slate-900 tracking-tight">Operations Sketch & Corridors</h1>
-                    <p className="text-xs text-slate-500 font-medium">Multi-modal route blueprints, loading-unloading topologies & FMS asset bindings</p>
-                  </div>
+        <div className="space-y-4">
+
+          {/* Table Header Controls */}
+          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs p-5">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-50 text-[#00705a] border border-emerald-200/80 flex items-center justify-center font-bold shadow-2xs shrink-0">
+                  <Route size={22} />
+                </div>
+                <div>
+                  <h1 className="text-xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                    Operations Corridors & Sketches
+                    <span className="text-[11px] font-bold text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full">
+                      {corridors.length} Total
+                    </span>
+                  </h1>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                    Multi-modal route blueprints, loading-unloading topologies & logistics fleet allocations
+                  </p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2.5">
+              {/* Action Controls & Filters */}
+              <div className="flex flex-wrap items-center gap-2.5">
+                {/* Search */}
+                <div className="relative min-w-[220px]">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={corridorSearch}
+                    onChange={e => setCorridorSearch(e.target.value)}
+                    placeholder="Search corridor, code, project..."
+                    className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-[#00705a]"
+                  />
+                </div>
+
+                {/* Project Filter */}
+                <select
+                  value={corridorProjectFilter}
+                  onChange={e => setCorridorProjectFilter(e.target.value)}
+                  className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#00705a]"
+                >
+                  <option value="ALL">All Projects ({corridors.length})</option>
+                  {projectsList.map(p => (
+                    <option key={p.id} value={p.project_id || p.id.toString()}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+
+                {/* Refresh */}
                 <button
+                  type="button"
                   onClick={() => fetchCorridors(true)}
-                  className="p-2.5 text-slate-500 hover:text-slate-800 bg-slate-50 hover:bg-slate-100 rounded-xl border border-slate-200 transition-colors"
+                  className="p-2 text-slate-600 hover:text-slate-900 bg-slate-50 hover:bg-slate-100 rounded-xl border border-slate-200 transition-colors cursor-pointer"
                   title="Refresh corridors"
                 >
                   <RefreshCw size={15} className={refreshing ? 'animate-spin' : ''} />
                 </button>
+
+                {/* Design Blueprint */}
                 <button
+                  type="button"
                   onClick={openDesignStudio}
-                  className="flex items-center gap-2 bg-[#00705a] hover:bg-[#005a48] text-white text-xs font-black uppercase tracking-wider px-4 py-2.5 rounded-xl shadow-sm transition-all"
+                  className="flex items-center gap-2 bg-[#00705a] hover:bg-[#005a48] text-white text-xs font-black uppercase tracking-wider px-4 py-2 rounded-xl shadow-xs transition-all cursor-pointer"
                 >
-                  <Plus size={16} />
+                  <Plus size={15} />
                   <span>Design Operations Sketch</span>
                 </button>
               </div>
             </div>
-
-            {/* Topology Explainer Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6 pt-6 border-t border-slate-100 text-xs">
-              <div className="p-4 rounded-2xl bg-slate-50/80 border border-slate-200/60 flex items-start gap-3">
-                <div className="p-2 rounded-xl bg-blue-50 text-blue-700 shrink-0 mt-0.5">
-                  <ArrowRightLeft size={16} />
-                </div>
-                <div>
-                  <div className="font-black text-slate-900">Multi-Modal Relay</div>
-                  <div className="text-[11px] text-slate-500 mt-0.5">Point A ➔ Rail ➔ Point B (Transshipment Hub) ➔ Road ➔ Point C (Site).</div>
-                </div>
-              </div>
-
-              <div className="p-4 rounded-2xl bg-slate-50/80 border border-slate-200/60 flex items-start gap-3">
-                <div className="p-2 rounded-xl bg-emerald-50 text-[#00705a] shrink-0 mt-0.5">
-                  <Layers size={16} />
-                </div>
-                <div>
-                  <div className="font-black text-slate-900">Multi-Loading ➔ Single Unload</div>
-                  <div className="text-[11px] text-slate-500 mt-0.5">Multiple Quarry Pits & Borrow Areas feeding 1 Central Crushing Plant.</div>
-                </div>
-              </div>
-
-              <div className="p-4 rounded-2xl bg-slate-50/80 border border-slate-200/60 flex items-start gap-3">
-                <div className="p-2 rounded-xl bg-purple-50 text-purple-700 shrink-0 mt-0.5">
-                  <Building2 size={16} />
-                </div>
-                <div>
-                  <div className="font-black text-slate-900">Single Load ➔ Multi-Delivery</div>
-                  <div className="text-[11px] text-slate-500 mt-0.5">1 Port / Central Rail Terminal feeding 4 Highway Construction Sectors.</div>
-                </div>
-              </div>
-            </div>
           </div>
 
-          {/* Corridor Selection Pills */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-            {corridors.map(c => {
-              const isSelected = selectedCorridor?.id === c.id;
-              return (
+          {/* Corridors Table Card */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+            {loading ? (
+              <div className="p-16 text-center">
+                <RefreshCw size={24} className="animate-spin text-[#00705a] mx-auto mb-3" />
+                <p className="text-xs font-bold text-slate-600">Loading corridors from master database...</p>
+              </div>
+            ) : filteredCorridors.length === 0 ? (
+              <div className="p-16 text-center">
+                <div className="w-12 h-12 bg-slate-50 rounded-2xl border border-slate-200 flex items-center justify-center mx-auto mb-3 text-slate-400">
+                  <Route size={22} />
+                </div>
+                <h3 className="text-sm font-bold text-slate-800">No Corridors Found</h3>
+                <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                  {corridorSearch || corridorProjectFilter !== 'ALL'
+                    ? 'No corridors match your search and filter criteria.'
+                    : 'Get started by creating your first multi-modal corridor blueprint.'}
+                </p>
                 <button
-                  key={c.id}
-                  onClick={() => selectCorridor(c)}
-                  className={`flex items-center gap-3 px-4 py-3 rounded-2xl text-left border transition-all shrink-0 ${isSelected
-                    ? 'bg-white border-[#00705a] shadow-sm ring-1 ring-[#00705a]'
-                    : 'bg-white/80 border-slate-200 hover:border-slate-300 text-slate-600'
-                    }`}
+                  type="button"
+                  onClick={openDesignStudio}
+                  className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 bg-[#00705a] hover:bg-[#005a48] text-white text-xs font-bold rounded-xl transition-all cursor-pointer"
                 >
-                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs ${isSelected ? 'bg-emerald-50 text-[#00705a]' : 'bg-slate-100 text-slate-600'
-                    }`}>
-                    <Route size={16} />
-                  </div>
-                  <div>
-                    <div className="text-xs font-black text-slate-900">{c.name}</div>
-                    <div className="flex items-center gap-2 text-[10px] text-slate-500 font-medium mt-0.5">
-                      <span className="font-bold text-slate-700">{c.corridorCode}</span>
-                      <span>·</span>
-                      <span>{c.projectName}</span>
-                      <span>·</span>
-                      <span>{c.totalDistanceKm} KM</span>
-                    </div>
-                  </div>
+                  <Plus size={14} />
+                  <span>Design Operations Sketch</span>
                 </button>
-              );
-            })}
-          </div>
-
-          {/* Corridor Blueprint Display */}
-          {selectedCorridor && (
-            <div className="space-y-6">
-
-              {/* Corridor Profile Card */}
-              <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm">
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-[#00705a] border border-emerald-200">
-                        {selectedCorridor.corridorCode}
-                      </span>
-                      <span className="text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-200">
-                        Project: {selectedCorridor.projectName}
-                      </span>
-                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                        Topology: {(selectedCorridor.topologyType || 'RELAY_MULTIMODAL').replace(/_/g, ' ')}
-                      </span>
-                    </div>
-                    <h2 className="text-xl font-black text-slate-900 mt-1.5">{selectedCorridor.name}</h2>
-                    <p className="text-xs text-slate-500 mt-1">{selectedCorridor.description}</p>
-
-                    {(selectedCorridor.projectHead || selectedCorridor.siteManager) && (
-                      <div className="flex flex-wrap items-center gap-4 mt-3 pt-3 border-t border-slate-100 text-xs">
-                        {selectedCorridor.projectHead && (
-                          <div className="flex items-center gap-1.5 text-slate-700 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200">
-                            <Users size={13} className="text-[#00705a]" />
-                            <span className="font-semibold text-slate-400 text-[10px] uppercase">Project Head:</span>
-                            <span className="font-bold text-slate-900">{selectedCorridor.projectHead}</span>
-                          </div>
-                        )}
-                        {selectedCorridor.siteManager && (
-                          <div className="flex items-center gap-1.5 text-slate-700 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200">
-                            <HardHat size={13} className="text-amber-600" />
-                            <span className="font-semibold text-slate-400 text-[10px] uppercase">Site In-Charge:</span>
-                            <span className="font-bold text-slate-900">{selectedCorridor.siteManager}</span>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-200/80 shrink-0">
-                    <div className="text-right">
-                      <div className="text-[10px] font-bold uppercase text-slate-400">Total Distance & Cycle Time</div>
-                      <div className="text-sm font-black text-slate-900">
-                        {selectedCorridor.totalDistanceKm} KM · ~{selectedCorridor.estimatedCycleTimeHours} Hrs TAT
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => setIsAssignAssetOpen(true)}
-                      className="flex items-center gap-1.5 bg-[#00705a] hover:bg-[#005a48] text-white text-xs font-bold px-3.5 py-2 rounded-xl transition-colors shadow-sm"
-                    >
-                      <Plus size={14} />
-                      <span>Assign Fleet / Equipment</span>
-                    </button>
-                  </div>
-                </div>
               </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50/80 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                      <th className="py-3 px-3 text-center w-12">#</th>
+                      <th className="py-3 px-4 w-44">Corridor Code</th>
+                      <th className="py-3 px-4 min-w-[220px]">Corridor Name</th>
+                      <th className="py-3 px-4 min-w-[200px]">Project Reference</th>
+                      <th className="py-3 px-3 w-28 text-center">Fleet</th>
+                      <th className="py-3 px-4 text-center w-32">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
+                    {filteredCorridors.map((c, idx) => (
+                      <tr
+                        key={c.id}
+                        className="hover:bg-slate-50/70 transition-colors"
+                      >
+                        {/* Index */}
+                        <td className="py-3.5 px-3 text-center text-slate-400 font-bold text-[11px]">
+                          {idx + 1}
+                        </td>
 
-              {/* VISUAL OPERATIONS SKETCH CANVAS (Interactive Pipeline) */}
-              <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-7 shadow-sm">
-                <div className="flex items-center justify-between mb-6">
-                  <div className="flex items-center gap-2">
-                    <Sparkles size={16} className="text-[#00705a]" />
-                    <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">Interactive Operations Sketch</h3>
-                  </div>
-                  <span className="text-[11px] font-semibold text-slate-400">
-                    Click any leg to filter assigned vehicles & machinery
-                  </span>
-                </div>
+                        {/* Corridor Code */}
+                        <td className="py-3.5 px-4">
+                          <span className="font-mono font-bold text-[11px] text-slate-900 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200 tracking-wider inline-block">
+                            {c.corridorCode}
+                          </span>
+                        </td>
 
-                {/* Visual Vector Route Pipeline */}
-                <div className="relative overflow-x-auto pb-4 pt-2">
-                  <div className="min-w-[780px] flex items-center justify-between gap-2">
-                    {legs.map((leg, idx) => {
-                      const isLegActive = activeLegIndex === idx;
-                      const isRail = leg.transportMode === 'Rail';
-                      const legAssets = assets.filter(a => a.legId === leg.id);
-                      const oType = leg.originType || '';
-
-                      return (
-                        <React.Fragment key={leg.id}>
-                          {/* Station Node (Origin) */}
-                          <div className="flex flex-col items-center shrink-0 w-44 text-center">
-                            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-bold transition-all shadow-xs ${oType.includes('Pit')
-                              ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                              : oType.includes('Siding') || oType.includes('Rail')
-                                ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                                : 'bg-emerald-50 text-[#00705a] border border-emerald-200'
-                              }`}>
-                              {oType.includes('Rail') ? <Train size={22} /> : <MapPin size={22} />}
-                            </div>
-                            <div className="text-xs font-black text-slate-900 mt-2 line-clamp-1">{leg.originName}</div>
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mt-0.5">
-                              {leg.originType}
-                            </span>
+                        {/* Corridor Name */}
+                        <td className="py-3.5 px-4">
+                          <div className="font-bold text-slate-900">
+                            {c.name}
                           </div>
+                          {c.description && (
+                            <p className="text-[11px] text-slate-500 truncate max-w-sm mt-0.5">
+                              {c.description}
+                            </p>
+                          )}
+                        </td>
 
-                          {/* Corridor Vector Connector (Leg Segment) */}
-                          <div
-                            onClick={() => setActiveLegIndex(isLegActive ? null : idx)}
-                            className={`flex-1 flex flex-col items-center cursor-pointer px-2 py-2 rounded-2xl border transition-all ${isLegActive
-                              ? 'bg-emerald-50/60 border-[#00705a] shadow-xs'
-                              : 'bg-slate-50/80 border-slate-200 hover:border-slate-300'
-                              }`}
+                        {/* Project Reference */}
+                        <td className="py-3.5 px-4">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (c.projectId) {
+                                navigate(`/tenant/project-management/${c.projectId}`);
+                              }
+                            }}
+                            className="flex items-center gap-1.5 font-semibold text-slate-800 hover:text-[#00705a] text-left group/proj transition-colors cursor-pointer"
+                            title="View Project Management Console"
                           >
-                            <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider mb-1">
-                              {isRail ? (
-                                <span className="flex items-center gap-1 text-blue-700">
-                                  <Train size={12} /> DFCC Rail
-                                </span>
-                              ) : (
-                                <span className="flex items-center gap-1 text-emerald-800">
-                                  <Truck size={12} /> Road Logistics
-                                </span>
-                              )}
-                              <span className="text-slate-400">·</span>
-                              <span className="text-slate-600">{leg.distanceKm} KM</span>
-                            </div>
-
-                            {/* Arrow Link Vector with Mode Badge */}
-                            <div className="w-full relative flex items-center justify-center my-1">
-                              <div className={`w-full h-1.5 rounded-full ${isRail
-                                ? 'bg-blue-500'
-                                : 'bg-[#00705a]'
-                                }`} />
-                              <div className="absolute bg-white px-2 py-0.5 rounded-full text-[9px] font-black border border-slate-200 shadow-xs">
-                                {leg.estimatedTatHours}h TAT
-                              </div>
-                            </div>
-
-                            {/* Transshipment Indicator & Assigned Assets Badge */}
-                            <div className="flex items-center gap-2 mt-1">
-                              {leg.transshipmentRequired && (
-                                <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200">
-                                  Transload Hub
-                                </span>
-                              )}
-                              <span className="text-[9px] font-bold text-slate-600 bg-white px-1.5 py-0.2 rounded border border-slate-200">
-                                {legAssets.length} Assets Assigned
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* Final Destination Node on last leg */}
-                          {idx === legs.length - 1 && (
-                            <div className="flex flex-col items-center shrink-0 w-44 text-center">
-                              <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-700 border border-indigo-200 flex items-center justify-center font-bold shadow-xs">
-                                <Building2 size={22} />
-                              </div>
-                              <div className="text-xs font-black text-slate-900 mt-2 line-clamp-1">{leg.destinationName}</div>
-                              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mt-0.5">
-                                {leg.destinationType}
-                              </span>
+                            <Building2 size={13} className="text-[#00705a] shrink-0 group-hover/proj:scale-110 transition-transform" />
+                            <span className="truncate max-w-[220px] hover:underline decoration-[#00705a] underline-offset-2">
+                              {c.projectName || 'Infrastructure Project'}
+                            </span>
+                            <ArrowUpRight size={11} className="text-slate-400 opacity-60 group-hover/proj:opacity-100 group-hover/proj:text-[#00705a] transition-all shrink-0" />
+                          </button>
+                          {(c.projectHead || c.siteManager) && (
+                            <div className="text-[10px] text-slate-400 font-medium mt-0.5 truncate max-w-[220px] pl-5">
+                              {c.projectHead ? `Lead: ${c.projectHead}` : (c.siteManager ? `Site: ${c.siteManager}` : '')}
                             </div>
                           )}
-                        </React.Fragment>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
+                        </td>
 
-              {/* ASSIGNED FLEET & HEAVY MACHINERY MATRIX */}
-              <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
-                  <div>
-                    <h3 className="text-base font-black text-slate-900">
-                      {activeLegIndex !== null
-                        ? `Assigned Fleet & Operators for ${legs[activeLegIndex]?.legName}`
-                        : `Corridor Fleet & Heavy Machinery Roster (${assets.length} Active Assets)`}
-                    </h3>
-                    <p className="text-xs text-slate-500 font-medium">Commercial tippers, trailers, excavators & cranes deployed along this corridor</p>
-                  </div>
-
-                  {activeLegIndex !== null && (
-                    <button
-                      onClick={() => setActiveLegIndex(null)}
-                      className="text-xs font-bold text-[#00705a] hover:underline"
-                    >
-                      Show All Corridor Assets
-                    </button>
-                  )}
-                </div>
-
-                {/* Asset Cards Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  {(activeLegIndex !== null
-                    ? assets.filter(a => a.legId === legs[activeLegIndex]?.id)
-                    : assets
-                  ).map(asset => {
-                    const isVehicle = asset.assetType === 'vehicle';
-                    return (
-                      <div
-                        key={asset.id}
-                        className="p-4 rounded-2xl bg-slate-50/70 border border-slate-200 hover:border-slate-300 transition-all space-y-3"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${isVehicle
-                            ? 'bg-emerald-50 text-[#00705a] border border-emerald-200'
-                            : 'bg-amber-50 text-amber-800 border border-amber-200'
-                            }`}>
-                            {isVehicle ? <Truck size={11} /> : <HardHat size={11} />}
-                            {isVehicle ? 'Haulage Truck' : 'Heavy Equipment'}
+                        {/* Committed Fleet */}
+                        <td className="py-3.5 px-3 text-center">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-[#00705a] border border-emerald-200">
+                            <Truck size={11} />
+                            <span>{c.assetsCount ?? c.assets?.length ?? 0} Assets</span>
                           </span>
-                          <span className="text-[10px] font-bold text-slate-500">{asset.shift}</span>
-                        </div>
+                        </td>
 
-                        <div>
-                          <div className="text-sm font-black text-slate-900 font-mono">{asset.assetNumber}</div>
-                          <div className="text-xs text-slate-500 font-medium">{asset.assetTitle}</div>
-                        </div>
-
-                        <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between text-xs">
-                          <div>
-                            <div className="text-[10px] font-bold uppercase text-slate-400">{asset.assignedPersonRole}</div>
-                            <div className="font-bold text-slate-800">{asset.assignedPersonName}</div>
+                        {/* Actions */}
+                        <td className="py-3.5 px-4 text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handlePreviewCorridor(c)}
+                              className="p-1.5 text-slate-500 hover:text-[#00705a] hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
+                              title="Open Corridor Blueprint in Sidebar"
+                            >
+                              <Route size={15} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenAssignModal(c)}
+                              className="p-1.5 text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
+                              title="Assign Fleet / Equipment"
+                            >
+                              <HardHat size={15} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteCorridor(c.id, c.name)}
+                              className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                              title="Delete Corridor"
+                            >
+                              <Trash2 size={15} />
+                            </button>
                           </div>
-                          <div className="text-right">
-                            <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                              {asset.operatingStatus}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
+            )}
 
-            </div>
-          )}
-        </>
+            {/* Table Footer info */}
+            {filteredCorridors.length > 0 && (
+              <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between text-xs text-slate-500">
+                <span>Showing <strong>{filteredCorridors.length}</strong> of <strong>{corridors.length}</strong> corridors</span>
+              </div>
+            )}
+          </div>
+
+        </div>
       )}
 
       {/* MODAL 1: TRUE FULL SCREEN OPERATIONS SKETCH STUDIO */}
@@ -1163,54 +1224,47 @@ export default function OperationsCorridorsPage() {
               </div>
             </div>
 
-            {/* Quick Metrics & Actions */}
-            <div className="flex items-center gap-4">
-              <div className="hidden md:flex items-center gap-3 text-xs text-slate-500 border-r border-slate-200 pr-4">
-                <span>Project: <strong className="text-slate-800">{selectedProjectName}</strong></span>
-                <span>·</span>
-                <span>Distance: <strong className="text-slate-800">{originLegDistance + stops.reduce((a, b) => a + (b.distanceKm || 0), 0)} KM</strong></span>
-                <span>·</span>
-                <span>Fleet: <strong className="text-[#00705a]">{assignedFleet.length} Active</strong></span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsCreateCorridorOpen(false)}
-                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-all border border-slate-200"
-                >
-                  Back to Directory
-                </button>
-                <button
-                  type="button"
-                  onClick={handlePublishBlueprint}
-                  disabled={submittingBlueprint}
-                  className="flex items-center gap-2 px-5 py-2.5 bg-[#00705a] hover:bg-[#005a48] text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-sm hover:shadow disabled:opacity-50"
-                >
-                  {submittingBlueprint ? (
-                    <>
-                      <RefreshCw size={14} className="animate-spin" />
-                      <span>Publishing Blueprint...</span>
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle2 size={15} />
-                      <span>Publish Corridor Blueprint</span>
-                    </>
-                  )}
-                </button>
-              </div>
+            {/* Studio Actions */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsPreviewModalOpen(true)}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-900 hover:bg-black text-white text-xs font-bold rounded-xl transition-all shadow-xs cursor-pointer"
+              >
+                <Route size={14} className="text-emerald-400" />
+                <span>Corridor Preview</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsCreateCorridorOpen(false)}
+                className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-all border border-slate-200 cursor-pointer"
+              >
+                Back to Directory
+              </button>
+              <button
+                type="button"
+                onClick={handlePublishBlueprint}
+                disabled={submittingBlueprint}
+                className="flex items-center gap-2 px-5 py-2.5 bg-[#00705a] hover:bg-[#005a48] text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-sm hover:shadow disabled:opacity-50 cursor-pointer"
+              >
+                {submittingBlueprint ? (
+                  <>
+                    <RefreshCw size={14} className="animate-spin" />
+                    <span>Publishing Blueprint...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 size={15} />
+                    <span>Publish Corridor Blueprint</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
 
-          {/* STUDIO WORKSPACE (Scrollable Grid in White Theme) */}
+          {/* STUDIO WORKSPACE (Full-Width Streamlined Route Builder) */}
           <div className="p-4 sm:p-6 bg-slate-50/70 border-b border-slate-200">
-            <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
-
-              {/* ─────────────────────────────────────────────────────────── */}
-              {/* LEFT COLUMN: PROJECT, TRANSPORT METHODS & ROUTE (7 Cols)   */}
-              {/* ─────────────────────────────────────────────────────────── */}
-              <div className="lg:col-span-7 space-y-5">
+            <div className="max-w-4xl mx-auto space-y-5">
 
                 {/* SECTION 1: PROJECT REFERENCE & OPTIONAL CORRIDOR NAME */}
                 <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
@@ -1297,35 +1351,37 @@ export default function OperationsCorridorsPage() {
                   </div>
                 </div>
 
-                {/* SECTION 2: METHODS OF TRANSPORT INVOLVED (DEDICATED SECTION) */}
-                <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                    <div>
-                      <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-slate-900">
-                        <Layers size={16} className="text-blue-600" />
-                        <span>2. Methods of Transport Involved</span>
-                      </div>
-                      <p className="text-[11px] text-slate-500 mt-0.5">
-                        Select transport modes for this corridor. Adding modes not yet in the project prompts an automatic project sync.
-                      </p>
+                {/* SECTION 2: METHODS OF TRANSPORT INVOLVED (MINIMALIST) */}
+                <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-slate-900">
+                      <Layers size={15} className="text-[#00705a]" />
+                      <span>2. Methods of Transport Involved</span>
                     </div>
-                    {syncProjectTransportModes && (
-                      <span className="text-[10px] font-bold text-[#00705a] bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                        ✓ Project Sync Enabled
-                      </span>
-                    )}
+                    <span className="text-[10px] text-slate-400 font-medium">Select active modes</span>
                   </div>
 
-                  {/* Mode Selector Cards */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                  {/* Sleek Minimalist Toggle Buttons */}
+                  <div className="grid grid-cols-2 gap-2.5">
                     {[
-                      { id: 'Road', label: 'Road Haulage', desc: 'Tippers, Dumpers & Multi-Axle Trucks', icon: Truck },
-                      { id: 'Rail', label: 'DFCC Rail', desc: 'Goods Rakes, Flat Wagons & Sidings', icon: Train },
-                      { id: 'Waterway', label: 'Barge / Waterway', desc: 'Inland River Cargo & Coastal Barges', icon: Navigation },
-                      { id: 'Conveyor', label: 'Conveyor Belt', desc: 'Overland Continuous Pipe Conveyor', icon: ArrowRightLeft }
+                      {
+                        id: 'Road',
+                        label: 'Road Haulage',
+                        icon: Truck,
+                        activeBorder: 'border-[#00705a] bg-emerald-50/60',
+                        activeIconBg: 'bg-[#00705a] text-white',
+                        activeBadge: 'bg-[#00705a] text-white'
+                      },
+                      {
+                        id: 'Rail',
+                        label: 'DFCC Rail',
+                        icon: Train,
+                        activeBorder: 'border-blue-600 bg-blue-50/60',
+                        activeIconBg: 'bg-blue-600 text-white',
+                        activeBadge: 'bg-blue-600 text-white'
+                      }
                     ].map(mode => {
                       const isSelected = selectedTransportModes.includes(mode.id);
-                      const isProjectDefault = projectTransportModes.some(m => m.toLowerCase() === mode.id.toLowerCase());
                       const Icon = mode.icon;
 
                       return (
@@ -1333,37 +1389,25 @@ export default function OperationsCorridorsPage() {
                           key={mode.id}
                           type="button"
                           onClick={() => handleToggleTransportMode(mode.id)}
-                          className={`p-3 rounded-xl border text-left transition-all relative flex flex-col justify-between ${isSelected
-                              ? 'bg-emerald-50/80 border-[#00705a] text-slate-900 shadow-xs'
-                              : 'bg-slate-50/80 border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-100'
-                            }`}
+                          className={`flex items-center justify-between p-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                            isSelected
+                              ? `${mode.activeBorder} shadow-2xs`
+                              : 'bg-slate-50 border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-100'
+                          }`}
                         >
-                          <div>
-                            <div className="flex items-center justify-between mb-2">
-                              <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold ${isSelected ? 'bg-[#00705a] text-white' : 'bg-slate-200 text-slate-600'
-                                }`}>
-                                <Icon size={14} />
-                              </div>
-                              {isSelected && (
-                                <span className="w-4 h-4 rounded-full bg-[#00705a] text-white flex items-center justify-center text-[10px]">
-                                  ✓
-                                </span>
-                              )}
+                          <div className="flex items-center gap-2.5">
+                            <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs transition-colors ${
+                              isSelected ? mode.activeIconBg : 'bg-slate-200 text-slate-500'
+                            }`}>
+                              <Icon size={14} />
                             </div>
-                            <div className="font-bold text-xs text-slate-900">{mode.label}</div>
-                            <div className="text-[10px] text-slate-500 line-clamp-2 mt-0.5">{mode.desc}</div>
+                            <span className="text-slate-900 font-bold">{mode.label}</span>
                           </div>
 
-                          <div className="mt-2.5 pt-2 border-t border-slate-200/80">
-                            {isProjectDefault ? (
-                              <span className="text-[9px] font-bold text-slate-500">
-                                In Project Master
-                              </span>
-                            ) : (
-                              <span className={`text-[9px] font-bold ${isSelected ? 'text-amber-600' : 'text-slate-400'}`}>
-                                {isSelected ? '+ Added to Corridor' : 'Not in Project'}
-                              </span>
-                            )}
+                          <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold transition-all ${
+                            isSelected ? mode.activeBadge : 'border border-slate-300 text-transparent'
+                          }`}>
+                            ✓
                           </div>
                         </button>
                       );
@@ -1371,885 +1415,655 @@ export default function OperationsCorridorsPage() {
                   </div>
                 </div>
 
-                {/* SECTION 3: WORKSITE STATIONS & DYNAMIC INTERMEDIATE STOPS */}
+                {/* SECTION 3: WORKSITE STATIONS & INTERMEDIATE STOPS (MINIMAL & STREAMLINED) */}
                 <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
+                  {/* Header */}
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
                     <div>
                       <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-slate-900">
                         <Compass size={16} className="text-[#00705a]" />
-                        <span>3. Worksite Stations & Intermediate Stops</span>
+                        <span>3. Route Stations & Intermediate Stops</span>
                       </div>
                       <p className="text-[11px] text-slate-500 mt-0.5">
-                        Define sequential haulage route: Origin pit, midway stockyards or sidings, and destination delivery site.
+                        Sequential route: Loading Origin (A) ➔ Midway Stops ➔ Unloading Destination (B)
                       </p>
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0">
                       <button
                         type="button"
-                        onClick={() => handleAddStop(true)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-[#00705a] hover:bg-[#005a48] text-white rounded-xl text-xs font-bold transition-all shadow-xs"
-                        title="Add a registered stockyard buffer hub as an intermediate stop"
+                        onClick={() => setIsPreviewModalOpen(true)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-black text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+                        title="Corridor Preview"
                       >
-                        <Warehouse size={14} />
-                        <span>+ Add Stockyard Stop</span>
+                        <Route size={13} className="text-emerald-400" />
+                        <span>Preview</span>
                       </button>
+
+                      <button
+                        type="button"
+                        onClick={handleSwapOriginDestination}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 hover:text-slate-900 border border-slate-200 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                        title="Swap Origin and Destination"
+                      >
+                        <ArrowRightLeft size={13} />
+                        <span>Swap</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleAddStop(true)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-[#00705a] hover:bg-[#005a48] text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+                        title="Add Stockyard Hub"
+                      >
+                        <Warehouse size={13} />
+                        <span>+ Stockyard</span>
+                      </button>
+
                       <button
                         type="button"
                         onClick={() => handleAddStop(false)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition-all shadow-2xs"
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                        title="Add Transit Siding or Waypoint"
                       >
-                        <Plus size={14} />
-                        <span>+ Add Siding</span>
+                        <Plus size={13} />
+                        <span>+ Siding</span>
                       </button>
                     </div>
                   </div>
 
-                  {/* STATION A: ORIGIN (LOADING POINT) */}
-                  <div className="p-4 rounded-2xl bg-amber-50/40 border border-amber-200/90 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-lg bg-amber-500 text-white flex items-center justify-center font-black text-xs shadow-xs">
-                          A
-                        </div>
-                        <span className="text-xs font-black text-amber-900 uppercase tracking-wider">
-                          Loading Point (Origin Station)
-                        </span>
-                      </div>
-                      <span className="text-[10px] font-bold text-amber-800 bg-amber-100/80 px-2 py-0.5 rounded-md border border-amber-200">
-                        Project Worksite Origin
-                      </span>
-                    </div>
+                  {/* TIMELINE STEPPER WRAPPER */}
+                  <div className="relative pl-6 space-y-4 before:absolute before:left-3 before:top-4 before:bottom-4 before:w-0.5 before:bg-slate-200">
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                      <div>
-                        <label className="font-bold text-slate-700 mb-1 block">Worksite / Loading Bay</label>
-                        <select
-                          value={originWorksite}
-                          onChange={e => setOriginWorksite(e.target.value)}
-                          className="w-full p-2.5 bg-white border border-amber-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 font-semibold text-slate-900"
-                        >
-                          {projectWorksites.map(w => (
-                            <option key={w.id} value={w.name}>
-                              {w.name} {w.location ? `(${w.location})` : ''}
-                            </option>
-                          ))}
-                          {stockyardsList.map(y => (
-                            <option key={y.id} value={y.yardName}>
-                              {y.yardName} [Stockyard]
-                            </option>
-                          ))}
-                          {projectWorksites.length === 0 && (
-                            <option value="Rewa Quarry Face (Loading Pit)">Rewa Quarry Face (Loading Pit)</option>
-                          )}
-                        </select>
+                    {/* ── STATION A: ORIGIN (LOADING POINT) ── */}
+                    <div className="relative">
+                      <div className={`absolute -left-6 top-3 w-6 h-6 rounded-full text-white font-black text-xs flex items-center justify-center ring-4 ring-white shadow-xs ${
+                        originActivity === 'LOADING' ? 'bg-amber-500' : (originActivity === 'UNLOADING' ? 'bg-indigo-600' : 'bg-[#00705a]')
+                      }`}>
+                        A
                       </div>
 
-                      <div>
-                        <label className="font-bold text-slate-700 mb-1 block">Worksite Classification</label>
-                        <select
-                          value={originType}
-                          onChange={e => setOriginType(e.target.value)}
-                          className="w-full p-2.5 bg-white border border-amber-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 font-medium text-slate-900"
-                        >
-                          <option value="Loading Pit">Quarry Loading Pit / Mine Face</option>
-                          <option value="Stockyard">Raw Material Stockyard</option>
-                          <option value="Crushing Plant">Crushing & Screening Plant</option>
-                          <option value="Rail Siding">Private Rail Siding</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    {/* Mode to next stop & distance */}
-                    <div className="pt-2 border-t border-amber-200/60 flex flex-wrap items-center justify-between gap-3 text-xs">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[11px] font-bold text-slate-600">Transit Mode to next station:</span>
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => setOriginLegMode('Road')}
-                            className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                              originLegMode === 'Road'
-                                ? 'bg-[#00705a] text-white font-black shadow-xs'
-                                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-                            }`}
-                          >
-                            <Truck size={13} /> Road
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setOriginLegMode('Rail')}
-                            className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                              originLegMode === 'Rail'
-                                ? 'bg-blue-600 text-white font-black shadow-xs'
-                                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-                            }`}
-                          >
-                            <Train size={13} /> Rail
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-3">
-                        <div className="flex items-center gap-1">
-                          <span className="text-slate-500 text-[11px] font-semibold">Distance:</span>
-                          <input
-                            type="number"
-                            step="0.1"
-                            value={originLegDistance}
-                            onChange={e => setOriginLegDistance(parseFloat(e.target.value) || 0)}
-                            className="w-16 p-1.5 bg-white border border-amber-200 rounded-lg text-center font-bold text-slate-900 focus:outline-none"
-                          />
-                          <span className="text-slate-500 font-bold text-[10px]">KM</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <span className="text-slate-500 text-[11px] font-semibold">TAT:</span>
-                          <input
-                            type="number"
-                            step="0.5"
-                            value={originLegTat}
-                            onChange={e => setOriginLegTat(parseFloat(e.target.value) || 0)}
-                            className="w-14 p-1.5 bg-white border border-amber-200 rounded-lg text-center font-bold text-slate-900 focus:outline-none"
-                          />
-                          <span className="text-slate-500 font-bold text-[10px]">Hrs</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* DYNAMIC INTERMEDIATE STOPS */}
-                  {stops.map((stop, sIdx) => {
-                    const isYard = stop.isStockyard || stop.type === 'Stockyard Hub';
-                    return (
-                      <div
-                        key={stop.id}
-                        className={`p-4 rounded-2xl border space-y-3 transition-all shadow-2xs animate-in fade-in duration-150 ${
-                          isYard ? 'bg-emerald-50/40 border-emerald-300' : 'bg-blue-50/40 border-blue-200/90'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
+                      <div className="bg-slate-50/70 hover:bg-slate-50 rounded-xl border border-slate-200 p-3.5 space-y-3 transition-all">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
                           <div className="flex items-center gap-2">
-                            <div
-                              className={`w-6 h-6 rounded-lg text-white flex items-center justify-center font-black text-xs shadow-xs ${
-                                isYard ? 'bg-[#00705a]' : 'bg-blue-600'
+                            <span className="text-xs font-bold text-slate-900">Station A</span>
+                            <span className="text-[10px] text-slate-400 font-medium">(Start Point)</span>
+                          </div>
+
+                          {/* Flexible Activity Toggle */}
+                          <div className="flex items-center rounded-lg border border-slate-200 bg-white p-0.5">
+                            <button
+                              type="button"
+                              onClick={() => setOriginActivity('LOADING')}
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
+                                originActivity === 'LOADING'
+                                  ? 'bg-amber-500 text-white shadow-2xs'
+                                  : 'text-slate-500 hover:text-slate-800'
                               }`}
+                            >
+                              Loading In
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setOriginActivity('UNLOADING')}
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
+                                originActivity === 'UNLOADING'
+                                  ? 'bg-indigo-600 text-white shadow-2xs'
+                                  : 'text-slate-500 hover:text-slate-800'
+                              }`}
+                            >
+                              Unload Out
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setOriginActivity('TRANSIT')}
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
+                                originActivity === 'TRANSIT'
+                                  ? 'bg-[#00705a] text-white shadow-2xs'
+                                  : 'text-slate-500 hover:text-slate-800'
+                              }`}
+                            >
+                              Transit Hub
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 text-xs items-center">
+                          <div className="sm:col-span-8">
+                            <label className="text-[11px] font-semibold text-slate-600 mb-1 block">Worksite / Pit</label>
+                            <select
+                              value={originWorksite}
+                              onChange={e => setOriginWorksite(e.target.value)}
+                              className="w-full p-2 bg-white border border-slate-200 rounded-lg text-slate-900 font-semibold focus:outline-none focus:ring-1 focus:ring-[#00705a] text-xs"
+                            >
+                              {projectWorksites.map(w => (
+                                <option key={w.id} value={w.name}>
+                                  {w.name} {w.location ? `(${w.location})` : ''}
+                                </option>
+                              ))}
+                              {stockyardsList.map(y => (
+                                <option key={y.id} value={y.yardName}>
+                                  {y.yardName} [Stockyard]
+                                </option>
+                              ))}
+                              {projectWorksites.length === 0 && (
+                                <option value="Rewa Quarry Face (Loading Pit)">Rewa Quarry Face (Loading Pit)</option>
+                              )}
+                            </select>
+                          </div>
+
+                          <div className="sm:col-span-4">
+                            <span className="text-[11px] font-semibold text-slate-600 mb-1 block">Next Leg Transit:</span>
+                            <div className="flex items-center rounded-lg border border-slate-200 bg-white p-0.5 w-full">
+                              {selectedTransportModes.map(mName => {
+                                const meta = MODE_META[mName] || { icon: Truck, activeClass: 'bg-[#00705a] text-white shadow-2xs' };
+                                const Icon = meta.icon;
+                                const isSelected = originLegMode.toLowerCase() === mName.toLowerCase();
+                                return (
+                                  <button
+                                    key={mName}
+                                    type="button"
+                                    onClick={() => setOriginLegMode(mName)}
+                                    className={`flex-1 flex items-center justify-center gap-1 py-1 px-1.5 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                                      isSelected
+                                        ? meta.activeClass
+                                        : 'text-slate-600 hover:text-slate-900'
+                                    }`}
+                                  >
+                                    <Icon size={12} />
+                                    <span>{mName}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* ── INTERMEDIATE STOPS (DYNAMIC) ── */}
+                    {stops.length === 0 ? (
+                      <div className="relative">
+                        <div className="border border-dashed border-slate-200 rounded-xl p-3 text-center bg-slate-50/40 text-xs text-slate-400 flex items-center justify-between">
+                          <span className="text-[11px]">Direct corridor leg (no intermediate stops)</span>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleAddStop(true)}
+                              className="text-[11px] font-bold text-[#00705a] hover:underline cursor-pointer"
+                            >
+                              + Add Stockyard
+                            </button>
+                            <span>·</span>
+                            <button
+                              type="button"
+                              onClick={() => handleAddStop(false)}
+                              className="text-[11px] font-bold text-blue-600 hover:underline cursor-pointer"
+                            >
+                              + Add Siding
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      stops.map((stop, sIdx) => {
+                        const isYard = stop.isStockyard || stop.type === 'Stockyard Hub';
+                        const currentActivity = stop.activity || 'TRANSIT';
+                        let nodeBg = 'bg-[#00705a]';
+                        if (currentActivity === 'LOADING') nodeBg = 'bg-amber-500';
+                        else if (currentActivity === 'UNLOADING') nodeBg = 'bg-indigo-600';
+
+                        return (
+                          <div key={stop.id} className="relative">
+                            <div
+                              className={`absolute -left-6 top-3 w-6 h-6 rounded-full text-white font-black text-xs flex items-center justify-center ring-4 ring-white shadow-xs ${nodeBg}`}
                             >
                               {sIdx + 1}
                             </div>
-                            <span className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-                              {isYard ? <Warehouse size={13} className="text-[#00705a]" /> : <Route size={13} className="text-blue-600" />}
-                              <span>Intermediate Stop {sIdx + 1}: {stop.name}</span>
-                            </span>
-                          </div>
 
-                          <div className="flex items-center gap-1.5">
-                            {/* Reorder Buttons */}
-                            <button
-                              type="button"
-                              onClick={() => handleMoveStopUp(sIdx)}
-                              disabled={sIdx === 0}
-                              title="Move Stop Up"
-                              className="p-1 text-slate-500 hover:text-slate-900 bg-white hover:bg-slate-100 rounded border border-slate-200 disabled:opacity-30 disabled:cursor-not-allowed"
-                            >
-                              <ArrowUp size={12} />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleMoveStopDown(sIdx)}
-                              disabled={sIdx === stops.length - 1}
-                              title="Move Stop Down"
-                              className="p-1 text-slate-500 hover:text-slate-900 bg-white hover:bg-slate-100 rounded border border-slate-200 disabled:opacity-30 disabled:cursor-not-allowed"
-                            >
-                              <ArrowDown size={12} />
-                            </button>
+                            <div className="bg-slate-50/70 hover:bg-slate-50 rounded-xl border border-slate-200 p-3.5 space-y-3 transition-all">
+                              {/* Header Row */}
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-bold text-slate-900">
+                                    Stop {sIdx + 1}: {stop.name || (isYard ? 'Stockyard Hub' : 'Transit Siding')}
+                                  </span>
 
-                            <span
-                              className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${
-                                isYard
-                                  ? 'bg-emerald-100 text-[#00705a] border-emerald-300 font-black'
-                                  : 'bg-blue-100 text-blue-800 border-blue-200'
-                              }`}
-                            >
-                              {isYard ? 'Stockyard Hub' : stop.type}
-                            </span>
+                                  {/* Flexible Activity Toggle */}
+                                  <div className="flex items-center rounded-lg border border-slate-200 bg-white p-0.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUpdateStop(stop.id, { activity: 'LOADING' })}
+                                      className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
+                                        currentActivity === 'LOADING'
+                                          ? 'bg-amber-500 text-white shadow-2xs'
+                                          : 'text-slate-500 hover:text-slate-800'
+                                      }`}
+                                    >
+                                      Loading In
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUpdateStop(stop.id, { activity: 'UNLOADING' })}
+                                      className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
+                                        currentActivity === 'UNLOADING'
+                                          ? 'bg-indigo-600 text-white shadow-2xs'
+                                          : 'text-slate-500 hover:text-slate-800'
+                                      }`}
+                                    >
+                                      Unload Out
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUpdateStop(stop.id, { activity: 'TRANSIT' })}
+                                      className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
+                                        currentActivity === 'TRANSIT'
+                                          ? 'bg-[#00705a] text-white shadow-2xs'
+                                          : 'text-slate-500 hover:text-slate-800'
+                                      }`}
+                                    >
+                                      Transit Hub
+                                    </button>
+                                  </div>
+                                </div>
 
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveStop(stop.id)}
-                              className="p-1 text-slate-400 hover:text-red-500 rounded hover:bg-white transition-colors ml-1"
-                              title="Remove stop"
-                            >
-                              <Trash2 size={13} />
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                          {/* If stockyard: Select registered stockyard from DB */}
-                          {isYard ? (
-                            <div>
-                              <label className="font-bold text-slate-700 mb-1 flex items-center justify-between">
-                                <span className="flex items-center gap-1.5">
-                                  <Warehouse size={12} className="text-[#00705a]" />
-                                  <span>Select Active Stockyard</span>
-                                </span>
-                                <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
-                                  Stockyard Management DB
-                                </span>
-                              </label>
-                              <select
-                                value={stop.stockyardId || ''}
-                                onChange={e => {
-                                  const chosenId = parseInt(e.target.value, 10);
-                                  const y = stockyardsList.find(item => item.id === chosenId);
-                                  if (y) {
-                                    handleUpdateStop(stop.id, {
-                                      name: y.yardName,
-                                      type: 'Stockyard Hub',
-                                      isStockyard: true,
-                                      stockyardId: y.id,
-                                      stockyardCode: y.yardCode || `YRD-${y.id}`,
-                                      stockyardLocation: y.location || 'Central Stockyard Hub',
-                                      divisionName: y.divisionName || y.division_name || 'Infrastructure Division',
-                                      plannedMaterial: stop.plannedMaterial || 'Track Ballast 40mm',
-                                      plannedQuantity: stop.plannedQuantity || 50,
-                                      plannedUnit: 'MT'
-                                    });
-                                  }
-                                }}
-                                className="w-full p-2.5 bg-white border border-emerald-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 font-bold text-slate-900"
-                              >
-                                <option value="">-- Choose Registered Stockyard --</option>
-                                {stockyardsList.map(y => (
-                                  <option key={y.id} value={y.id}>
-                                    {y.yardName} ({y.yardCode || ('YRD-' + y.id)}) — {y.location || 'Hub'}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          ) : (
-                            <div>
-                              <label className="font-bold text-slate-700 mb-1 block">Stop Name / Waypoint</label>
-                              <input
-                                type="text"
-                                value={stop.name}
-                                onChange={e => handleUpdateStop(stop.id, { name: e.target.value })}
-                                placeholder="e.g., Satna Rail Siding / Buffer Depot..."
-                                className="w-full p-2.5 bg-white border border-blue-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-semibold text-slate-900"
-                              />
-                            </div>
-                          )}
-
-                          <div>
-                            <label className="font-bold text-slate-700 mb-1 block">Stop Classification</label>
-                            <select
-                              value={stop.type}
-                              onChange={e => {
-                                const newType = e.target.value;
-                                if (newType === 'Stockyard Hub') {
-                                  const firstYard = stockyardsList[0];
-                                  handleUpdateStop(stop.id, {
-                                    type: newType,
-                                    isStockyard: true,
-                                    stockyardId: firstYard?.id,
-                                    stockyardCode: firstYard?.yardCode || (firstYard?.id ? `YRD-${firstYard.id}` : undefined),
-                                    name: firstYard?.yardName || stop.name,
-                                    stockyardLocation: firstYard?.location || 'Central Stockyard Hub',
-                                    divisionName: firstYard?.divisionName || firstYard?.division_name || 'Infrastructure Division',
-                                    plannedMaterial: stop.plannedMaterial || 'Track Ballast 40mm',
-                                    plannedQuantity: stop.plannedQuantity || 50
-                                  });
-                                } else {
-                                  handleUpdateStop(stop.id, { type: newType, isStockyard: false });
-                                }
-                              }}
-                              className="w-full p-2.5 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-semibold text-slate-900"
-                            >
-                              <option value="Stockyard Hub">🏢 Stockyard Hub (Buffer Storage & Management)</option>
-                              <option value="Transshipment Hub">Transshipment Hub (Mode Transfer)</option>
-                              <option value="Rail Siding">Dedicated DFCC Rail Siding</option>
-                              <option value="Weighbridge Hub">Weighbridge & Quality Inspection Hub</option>
-                              <option value="Fuel / Safety Bay">Midway Fuel & Safety Bay</option>
-                            </select>
-                          </div>
-                        </div>
-
-                        {/* If Stockyard: Section 4 Info Panel */}
-                        {isYard && (
-                          <div className="bg-white/95 rounded-xl border border-emerald-200 p-3.5 space-y-2.5 text-xs">
-                            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-100 pb-2">
-                              <div className="flex items-center gap-2">
-                                <span className="font-mono text-[10px] bg-emerald-50 text-[#00705a] px-2 py-0.5 rounded font-bold border border-emerald-200">
-                                  {stop.stockyardCode || `YRD-${stop.stockyardId || 'AUTO'}`}
-                                </span>
-                                <span className="font-black text-slate-900">{stop.name}</span>
-                              </div>
-                              <span className="text-[11px] font-semibold text-slate-500 flex items-center gap-1">
-                                <Building2 size={12} className="text-slate-400" />
-                                <span>{stop.divisionName || 'Infrastructure Division'}</span>
-                              </span>
-                            </div>
-
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
-                              <div>
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Location</span>
-                                <span className="font-medium text-slate-700 truncate block mt-0.5">{stop.stockyardLocation || 'Central Hub'}</span>
-                              </div>
-                              <div>
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Planned Commodity</span>
-                                <input
-                                  type="text"
-                                  value={stop.plannedMaterial || 'Track Ballast 40mm'}
-                                  onChange={e => handleUpdateStop(stop.id, { plannedMaterial: e.target.value })}
-                                  className="w-full font-bold text-slate-800 bg-transparent border-b border-slate-200 focus:outline-none focus:border-[#00705a] mt-0.5"
-                                />
-                              </div>
-                              <div>
-                                <span className="text-[10px] font-black text-[#00705a] uppercase tracking-wider block">Planned Routing</span>
-                                <div className="flex items-center gap-1 mt-0.5">
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    value={stop.plannedQuantity ?? 50}
-                                    onChange={e => handleUpdateStop(stop.id, { plannedQuantity: parseFloat(e.target.value) || 0 })}
-                                    className="w-16 p-0.5 font-black text-slate-900 border border-emerald-300 rounded text-right focus:outline-none bg-emerald-50/50"
-                                  />
-                                  <span className="text-[10px] font-bold text-slate-500">MT</span>
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleMoveStopUp(sIdx)}
+                                    disabled={sIdx === 0}
+                                    title="Move Up"
+                                    className="p-1 text-slate-400 hover:text-slate-800 rounded hover:bg-slate-200 disabled:opacity-20 cursor-pointer"
+                                  >
+                                    <ArrowUp size={12} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleMoveStopDown(sIdx)}
+                                    disabled={sIdx === stops.length - 1}
+                                    title="Move Down"
+                                    className="p-1 text-slate-400 hover:text-slate-800 rounded hover:bg-slate-200 disabled:opacity-20 cursor-pointer"
+                                  >
+                                    <ArrowDown size={12} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveStop(stop.id)}
+                                    title="Remove Stop"
+                                    className="p-1 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 cursor-pointer ml-1"
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
                                 </div>
                               </div>
-                              <div>
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Available Stock</span>
-                                <span className="font-black text-emerald-700 block mt-0.5">{(stop.actualAvailable || 0).toFixed(1)} MT</span>
-                              </div>
-                            </div>
-                          </div>
-                        )}
 
-                        {/* Outbound leg to next stop */}
-                        <div className="pt-2 border-t border-slate-200/60 flex flex-wrap items-center justify-between gap-3 text-xs">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[11px] font-bold text-slate-600">Transit Mode to next station:</span>
-                            <div className="flex items-center gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() => handleUpdateStop(stop.id, { transportMode: 'Road' })}
-                                className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                                  stop.transportMode === 'Road'
-                                    ? 'bg-[#00705a] text-white font-black shadow-xs'
-                                    : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-                                }`}
-                              >
-                                <Truck size={13} /> Road
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleUpdateStop(stop.id, { transportMode: 'Rail' })}
-                                className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                                  stop.transportMode === 'Rail'
-                                    ? 'bg-blue-600 text-white font-black shadow-xs'
-                                    : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-                                }`}
-                              >
-                                <Train size={13} /> Rail
-                              </button>
-                            </div>
-                          </div>
+                              {/* Form Controls Row */}
+                              <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 text-xs items-center">
+                                <div className="sm:col-span-8">
+                                  {isYard ? (
+                                    <div>
+                                      <label className="text-[11px] font-semibold text-slate-600 mb-1 block">Registered Stockyard</label>
+                                      <select
+                                        value={stop.stockyardId || ''}
+                                        onChange={e => {
+                                          const chosenId = parseInt(e.target.value, 10);
+                                          const y = stockyardsList.find(item => item.id === chosenId);
+                                          if (y) {
+                                            handleUpdateStop(stop.id, {
+                                              name: y.yardName,
+                                              type: 'Stockyard Hub',
+                                              isStockyard: true,
+                                              stockyardId: y.id,
+                                              stockyardCode: y.yardCode || `YRD-${y.id}`,
+                                              stockyardLocation: y.location || 'Central Stockyard Hub',
+                                              divisionName: y.divisionName || y.division_name || 'Infrastructure Division'
+                                            });
+                                          }
+                                        }}
+                                        className="w-full p-2 bg-white border border-slate-200 rounded-lg text-slate-900 font-semibold focus:outline-none focus:ring-1 focus:ring-[#00705a] text-xs"
+                                      >
+                                        <option value="">-- Choose Stockyard --</option>
+                                        {stockyardsList.map(y => (
+                                          <option key={y.id} value={y.id}>
+                                            {y.yardName} ({y.yardCode || 'YRD-' + y.id})
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                  ) : (
+                                    <div>
+                                      <label className="text-[11px] font-semibold text-slate-600 mb-1 block">Siding / Stop Name</label>
+                                      <input
+                                        type="text"
+                                        value={stop.name}
+                                        onChange={e => handleUpdateStop(stop.id, { name: e.target.value })}
+                                        placeholder="e.g. Satna Rail Siding"
+                                        className="w-full p-2 bg-white border border-slate-200 rounded-lg text-slate-900 font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs"
+                                      />
+                                    </div>
+                                  )}
+                                </div>
 
-                          <div className="flex items-center gap-3">
-                            <div className="flex items-center gap-1">
-                              <span className="text-slate-500 text-[11px] font-semibold">Distance:</span>
-                              <input
-                                type="number"
-                                step="0.1"
-                                value={stop.distanceKm}
-                                onChange={e => handleUpdateStop(stop.id, { distanceKm: parseFloat(e.target.value) || 0 })}
-                                className="w-16 p-1.5 bg-white border border-slate-300 rounded-lg text-center font-bold text-slate-900 focus:outline-none"
-                              />
-                              <span className="text-slate-500 font-bold text-[10px]">KM</span>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <span className="text-slate-500 text-[11px] font-semibold">TAT:</span>
-                              <input
-                                type="number"
-                                step="0.5"
-                                value={stop.estimatedTatHours}
-                                onChange={e => handleUpdateStop(stop.id, { estimatedTatHours: parseFloat(e.target.value) || 0 })}
-                                className="w-14 p-1.5 bg-white border border-slate-300 rounded-lg text-center font-bold text-slate-900 focus:outline-none"
-                              />
-                              <span className="text-slate-500 font-bold text-[10px]">Hrs</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  {/* STATION B: DESTINATION (UNLOADING POINT) */}
-                  <div className="p-4 rounded-2xl bg-indigo-50/40 border border-indigo-200/90 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-black text-xs shadow-xs">
-                          B
-                        </div>
-                        <span className="text-xs font-black text-indigo-950 uppercase tracking-wider">
-                          Unloading Station (Destination Delivery Site)
-                        </span>
-                      </div>
-                      <span className="text-[10px] font-bold text-indigo-900 bg-indigo-100/80 px-2 py-0.5 rounded-md border border-indigo-200">
-                        Project Worksite Destination
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                      <div>
-                        <label className="font-bold text-slate-700 mb-1 block">Delivery Worksite / Station</label>
-                        <select
-                          value={destinationWorksite}
-                          onChange={e => setDestinationWorksite(e.target.value)}
-                          className="w-full p-2.5 bg-white border border-indigo-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 font-bold text-slate-900"
-                        >
-                          {projectWorksites.map(w => (
-                            <option key={w.id} value={w.name}>
-                              {w.name} {w.location ? `(${w.location})` : ''}
-                            </option>
-                          ))}
-                          {stockyardsList.map(y => (
-                            <option key={y.id} value={y.yardName}>
-                              {y.yardName} [Stockyard]
-                            </option>
-                          ))}
-                          {projectWorksites.length === 0 && (
-                            <option value="Noida Sector-62 Metro Depot Site">Noida Sector-62 Metro Depot Site</option>
-                          )}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="font-bold text-slate-700 mb-1 block">Station Classification</label>
-                        <select
-                          value={destinationType}
-                          onChange={e => setDestinationType(e.target.value)}
-                          className="w-full p-2.5 bg-white border border-indigo-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-900"
-                        >
-                          <option value="Delivery Site">Delivery Project Worksites</option>
-                          <option value="Depot Site">Central Metro / Construction Depot</option>
-                          <option value="Batching Plant">Ready-Mix Concrete / Batching Plant</option>
-                          <option value="Stockyard Pile">Central Finished Stockpile Bay</option>
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-              </div>
-
-              {/* ─────────────────────────────────────────────────────────── */}
-              {/* RIGHT COLUMN: LEADERSHIP & FLEET COMMITMENT (5 Cols)         */}
-              {/* ─────────────────────────────────────────────────────────── */}
-              <div className="lg:col-span-5 space-y-6">
-
-                {/* ─────────────────────────────────────────────────────────── */}
-                {/* CORRIDOR PREVIEW SCHEMATIC (DRAFT ROUTE VISUALIZATION)     */}
-                {/* ─────────────────────────────────────────────────────────── */}
-                <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-                  {/* Card Header */}
-                  <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-white">
-                    <h3 className="text-base font-bold text-slate-900 tracking-tight">Corridor preview</h3>
-                    <span className="px-2.5 py-1 text-xs font-semibold text-slate-600 bg-slate-100 rounded-lg border border-slate-200">
-                      Draft route
-                    </span>
-                  </div>
-
-                  {/* Dark Blueprint Grid Canvas */}
-                  <div
-                    className="p-4 bg-[#0a1822] text-white relative select-none"
-                    style={{
-                      backgroundImage: 'linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px)',
-                      backgroundSize: '24px 24px'
-                    }}
-                  >
-                    {/* Header inside schematic */}
-                    <div className="flex items-center justify-between text-[10px] font-mono font-bold tracking-widest text-slate-400 mb-4">
-                      <span>ROUTE SEQUENCE / SCHEMATIC</span>
-                      <button
-                        type="button"
-                        onClick={() => setIsSchematicExpanded(!isSchematicExpanded)}
-                        className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition-colors"
-                        title={isSchematicExpanded ? 'Collapse' : 'Expand full schematic'}
-                      >
-                        <Maximize2 size={13} />
-                      </button>
-                    </div>
-
-                    {/* Stepped Blueprint Schematic */}
-                    <div
-                      className="relative my-2 transition-all"
-                      style={{ height: `${previewNodes.length * 72 + 10}px` }}
-                    >
-                      {/* SVG Dashed Step Connectors */}
-                      <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ minWidth: '100%' }}>
-                        {previewNodes.slice(0, -1).map((curr, idx) => {
-                          const next = previewNodes[idx + 1];
-                          const startX = curr.x;
-                          const startY = 28 + idx * 72;
-                          const endX = next.x;
-                          const endY = 28 + (idx + 1) * 72;
-
-                          let pathD = '';
-                          if (startX === endX) {
-                            pathD = `M ${startX} ${startY + 15} V ${endY - 15}`;
-                          } else {
-                            const midY = (startY + endY) / 2;
-                            pathD = `M ${startX} ${startY + 15} V ${midY} H ${endX} V ${endY - 15}`;
-                          }
-
-                          const isPending = next.status === 'pending_yard';
-                          return (
-                            <path
-                              key={`link-${idx}`}
-                              d={pathD}
-                              fill="none"
-                              stroke={isPending ? '#f59e0b' : '#34d399'}
-                              strokeWidth="2"
-                              strokeDasharray="4 4"
-                              strokeOpacity={isPending ? 0.9 : 0.75}
-                            />
-                          );
-                        })}
-                      </svg>
-
-                      {/* Nodes with Badges and Labels */}
-                      {previewNodes.map((node, idx) => {
-                        const centerY = 28 + idx * 72;
-                        const isPending = node.status === 'pending_yard';
-                        const isYard = node.status === 'stockyard';
-                        const isOriginOrDest = node.type === 'origin' || node.type === 'destination';
-
-                        let circleClass = 'bg-[#182635] border-2 border-slate-500 text-slate-200';
-                        if (isOriginOrDest) {
-                          circleClass = 'bg-[#064e3b] border-2 border-emerald-400 text-emerald-300';
-                        } else if (isPending) {
-                          circleClass = 'bg-[#451a03] border-2 border-amber-500 text-amber-300';
-                        } else if (isYard) {
-                          circleClass = 'bg-[#064e3b] border-2 border-emerald-400 text-emerald-300';
-                        }
-
-                        return (
-                          <div
-                            key={node.id}
-                            className="absolute flex items-center gap-3 transition-all"
-                            style={{
-                              top: `${centerY - 16}px`,
-                              left: `${node.x - 16}px`
-                            }}
-                          >
-                            <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs shrink-0 shadow-sm ${circleClass}`}>
-                              {node.label}
-                            </div>
-                            <div className="leading-tight pr-2">
-                              <div className={`font-bold text-xs truncate max-w-[190px] ${isPending ? 'text-amber-300' : 'text-white'}`}>
-                                {node.title}
-                              </div>
-                              <div className="text-[10px] text-slate-400 font-medium truncate max-w-[190px] mt-0.5">
-                                {node.subtitle}
+                                <div className="sm:col-span-4">
+                                  <span className="text-[11px] font-semibold text-slate-600 mb-1 block">Next Leg Transit:</span>
+                                  <div className="flex items-center rounded-lg border border-slate-200 bg-white p-0.5 w-full">
+                                    {selectedTransportModes.map(mName => {
+                                      const meta = MODE_META[mName] || { icon: Truck, activeClass: 'bg-[#00705a] text-white shadow-2xs' };
+                                      const Icon = meta.icon;
+                                      const isSelected = (stop.transportMode || 'Road').toLowerCase() === mName.toLowerCase();
+                                      return (
+                                        <button
+                                          key={mName}
+                                          type="button"
+                                          onClick={() => handleUpdateStop(stop.id, { transportMode: mName as any })}
+                                          className={`flex-1 flex items-center justify-center gap-1 py-1 px-1.5 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                                            isSelected
+                                              ? meta.activeClass
+                                              : 'text-slate-600 hover:text-slate-900'
+                                          }`}
+                                        >
+                                          <Icon size={12} />
+                                          <span>{mName}</span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
                               </div>
                             </div>
                           </div>
                         );
-                      })}
-                    </div>
-
-                    {/* Legend Notice */}
-                    <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center gap-2 text-[10px] text-slate-400 font-mono">
-                      <span className="w-4 h-0.5 bg-slate-500 inline-block shrink-0"></span>
-                      <span>Dashed connections are unconfirmed - not to scale</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Panel 3: Project Head & Site In-Charge Assignment */}
-                <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                    <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-slate-900">
-                      <Users size={16} className="text-[#00705a]" />
-                      <span>Project Leadership & Site Supervision</span>
-                    </div>
-                    <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">Key Personnel</span>
-                  </div>
-
-                  <div className="space-y-3.5 text-xs">
-                    {/* Project Head Dropdown */}
-                    <div>
-                      <label className="font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
-                        <Users size={13} className="text-[#00705a]" />
-                        <span>Project Head / Director</span>
-                      </label>
-                      <input
-                        type="text"
-                        list="team-heads-list"
-                        value={projectHead}
-                        onChange={e => setProjectHead(e.target.value)}
-                        placeholder="Select or enter Project Head..."
-                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#00705a]/20 focus:border-[#00705a] font-medium text-slate-900 placeholder-slate-400"
-                      />
-                      <datalist id="team-heads-list">
-                        {teamList.map(t => (
-                          <option key={t.id} value={t.name}>{t.role ? `${t.name} (${t.role})` : t.name}</option>
-                        ))}
-                        <option value="Rajesh Kumar (Project Director)" />
-                        <option value="Col. Vikram Rathore (Head of Operations)" />
-                      </datalist>
-                    </div>
-
-                    {/* Site Manager Dropdown */}
-                    <div>
-                      <label className="font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
-                        <HardHat size={13} className="text-amber-600" />
-                        <span>Site Manager / In-Charge</span>
-                      </label>
-                      <input
-                        type="text"
-                        list="team-managers-list"
-                        value={siteManager}
-                        onChange={e => setSiteManager(e.target.value)}
-                        placeholder="Select or enter Site In-Charge..."
-                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#00705a]/20 focus:border-[#00705a] font-medium text-slate-900 placeholder-slate-400"
-                      />
-                      <datalist id="team-managers-list">
-                        {teamList.map(t => (
-                          <option key={t.id} value={t.name}>{t.role ? `${t.name} (${t.role})` : t.name}</option>
-                        ))}
-                        <option value="Amit Sharma (Site Engineer & In-Charge)" />
-                        <option value="Sunil Verma (Quarry & Haulage Manager)" />
-                      </datalist>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Panel 4: Fleet & Heavy Machinery Roster Assignment */}
-                <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                    <div>
-                      <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-slate-900">
-                        <Truck size={16} className="text-[#00705a]" />
-                        <span>Assign Fleet & Heavy Machinery</span>
-                      </div>
-                      <p className="text-[11px] text-slate-500 mt-0.5">
-                        Only vehicles with active drivers in FMS can be bound to this corridor
-                      </p>
-                    </div>
-                    <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-[#00705a] border border-emerald-200">
-                      {assignedFleet.length} Committed
-                    </span>
-                  </div>
-
-                  {/* Quick Asset Add Controls */}
-                  <div className="p-3.5 rounded-2xl bg-slate-50/80 border border-slate-200 space-y-3 text-xs">
-                    {/* Asset Category Toggle */}
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setStudioAssetType('vehicle');
-                          setSelectedAssetId('');
-                          setDriverNameInput('');
-                          setDriverPhoneInput('');
-                        }}
-                        className={`flex items-center justify-center gap-1.5 py-2 rounded-xl font-bold transition-all ${studioAssetType === 'vehicle'
-                            ? 'bg-[#00705a] text-white shadow-xs'
-                            : 'bg-white text-slate-600 border border-slate-200 hover:text-slate-900 hover:bg-slate-50'
-                          }`}
-                      >
-                        <Truck size={13} />
-                        <span>Commercial Truck</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setStudioAssetType('heavy_equipment');
-                          setSelectedAssetId('');
-                          setDriverNameInput('');
-                          setDriverPhoneInput('');
-                        }}
-                        className={`flex items-center justify-center gap-1.5 py-2 rounded-xl font-bold transition-all ${studioAssetType === 'heavy_equipment'
-                            ? 'bg-amber-600 text-white shadow-xs'
-                            : 'bg-white text-slate-600 border border-slate-200 hover:text-slate-900 hover:bg-slate-50'
-                          }`}
-                      >
-                        <HardHat size={13} />
-                        <span>Heavy Machinery</span>
-                      </button>
-                    </div>
-
-                    {/* Asset Dropdown - STRICTLY FILTERED TO VEHICLES WITH ASSIGNED DRIVERS */}
-                    <div>
-                      <label className="font-bold text-slate-700 mb-1 flex items-center justify-between">
-                        <span>
-                          {studioAssetType === 'vehicle' ? 'FMS Vehicle (Assigned Drivers Only)' : 'Heavy Machinery & Excavators'}
-                        </span>
-                        {studioAssetType === 'vehicle' && (
-                          <span className="text-[10px] text-emerald-700 font-semibold">
-                            {assignedDriverVehicles.length} available
-                          </span>
-                        )}
-                      </label>
-                      <select
-                        value={selectedAssetId}
-                        onChange={e => handleAssetSelectInStudio(e.target.value)}
-                        className="w-full p-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#00705a]/20 focus:border-[#00705a] font-medium text-slate-900"
-                      >
-                        <option value="">-- Choose Asset from Fleet --</option>
-                        {studioAssetType === 'vehicle' ? (
-                          assignedDriverVehicles.length > 0 ? (
-                            assignedDriverVehicles.map(v => (
-                              <option key={v.id} value={v.id.toString()}>
-                                {v.vehicleNumber} · {v.model || v.make || 'Commercial Tipper'} (Driver: {v.assignedDriverName || v.assigned_driver_name})
-                              </option>
-                            ))
-                          ) : (
-                            <option value="" disabled>
-                              No vehicles with assigned drivers in FMS (driver required)
-                            </option>
-                          )
-                        ) : (
-                          (assignedOperatorEquipment.length > 0 ? assignedOperatorEquipment : equipmentList).map(e => (
-                            <option key={e.id} value={e.id.toString()}>
-                              {e.machineId} · {e.equipmentName} ({e.assignedOperatorName ? `Operator: ${e.assignedOperatorName}` : 'Designated Operator'})
-                            </option>
-                          ))
-                        )}
-                      </select>
-                      {studioAssetType === 'vehicle' && assignedDriverVehicles.length === 0 && (
-                        <p className="text-[10px] text-amber-700 font-medium mt-1">
-                          * Only vehicles with an assigned driver can be selected. Update driver in Fleet Management first.
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Driver & Operator Inputs */}
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="font-bold text-slate-700 mb-1 block">
-                          {studioAssetType === 'vehicle' ? 'Assigned Driver' : 'Assigned Operator'}
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="Name..."
-                          value={driverNameInput}
-                          onChange={e => setDriverNameInput(e.target.value)}
-                          className="w-full p-2 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#00705a]/20 text-slate-900 placeholder-slate-400"
-                        />
-                      </div>
-                      <div>
-                        <label className="font-bold text-slate-700 mb-1 block">Shift</label>
-                        <select
-                          value={selectedShift}
-                          onChange={e => setSelectedShift(e.target.value)}
-                          className="w-full p-2 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#00705a]/20 text-slate-900 font-medium"
-                        >
-                          <option value="Day Shift">Day Shift</option>
-                          <option value="Night Shift">Night Shift</option>
-                          <option value="24x7 Continuous">24x7 Continuous</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={handleAddFleetToStudio}
-                      disabled={!selectedAssetId}
-                      className="w-full flex items-center justify-center gap-1.5 py-2.5 bg-[#00705a] hover:bg-[#005a48] text-white rounded-xl font-bold transition-all shadow-xs disabled:opacity-40"
-                    >
-                      <Plus size={14} />
-                      <span>Commit Asset to Corridor</span>
-                    </button>
-                  </div>
-
-                  {/* Assigned Fleet List Cards */}
-                  <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                    {assignedFleet.length === 0 ? (
-                      <div className="p-4 rounded-xl border border-dashed border-slate-200 text-center text-xs text-slate-500 bg-slate-50/50">
-                        No vehicles or machinery committed yet. Choose an asset with driver above.
-                      </div>
-                    ) : (
-                      assignedFleet.map(f => (
-                        <div
-                          key={f.id}
-                          className="p-3 rounded-xl bg-white border border-slate-200 flex items-center justify-between text-xs shadow-2xs"
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <div className={`p-1.5 rounded-lg ${f.assetType === 'vehicle' ? 'bg-emerald-50 text-[#00705a] border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'
-                              }`}>
-                              {f.assetType === 'vehicle' ? <Truck size={14} /> : <HardHat size={14} />}
-                            </div>
-                            <div>
-                              <div className="font-black text-slate-900 font-mono">{f.assetNumber}</div>
-                              <div className="text-[10px] text-slate-500 font-medium">
-                                {f.assignedPersonName} · <span className="text-[#00705a] font-bold">{f.shift}</span>
-                              </div>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveFleetFromStudio(f.id)}
-                            className="text-slate-400 hover:text-red-500 p-1 rounded-md transition-colors"
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        </div>
-                      ))
+                      })
                     )}
-                  </div>
 
+                    {/* ── STATION B: DESTINATION (UNLOADING POINT) ── */}
+                    <div className="relative">
+                      <div className={`absolute -left-6 top-3 w-6 h-6 rounded-full text-white font-black text-xs flex items-center justify-center ring-4 ring-white shadow-xs ${
+                        destinationActivity === 'UNLOADING' ? 'bg-indigo-600' : (destinationActivity === 'LOADING' ? 'bg-amber-500' : 'bg-[#00705a]')
+                      }`}>
+                        B
+                      </div>
+
+                      <div className="bg-slate-50/70 hover:bg-slate-50 rounded-xl border border-slate-200 p-3.5 space-y-3 transition-all">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-slate-900">Station B</span>
+                            <span className="text-[10px] text-slate-400 font-medium">(End Point)</span>
+                          </div>
+
+                          {/* Flexible Activity Toggle */}
+                          <div className="flex items-center rounded-lg border border-slate-200 bg-white p-0.5">
+                            <button
+                              type="button"
+                              onClick={() => setDestinationActivity('LOADING')}
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
+                                destinationActivity === 'LOADING'
+                                  ? 'bg-amber-500 text-white shadow-2xs'
+                                  : 'text-slate-500 hover:text-slate-800'
+                              }`}
+                            >
+                              Loading In
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDestinationActivity('UNLOADING')}
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
+                                destinationActivity === 'UNLOADING'
+                                  ? 'bg-indigo-600 text-white shadow-2xs'
+                                  : 'text-slate-500 hover:text-slate-800'
+                              }`}
+                            >
+                              Unload Out
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDestinationActivity('TRANSIT')}
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
+                                destinationActivity === 'TRANSIT'
+                                  ? 'bg-[#00705a] text-white shadow-2xs'
+                                  : 'text-slate-500 hover:text-slate-800'
+                              }`}
+                            >
+                              Transit Hub
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="text-xs">
+                          <label className="text-[11px] font-semibold text-slate-600 mb-1 block">Delivery Worksite</label>
+                          <select
+                            value={destinationWorksite}
+                            onChange={e => setDestinationWorksite(e.target.value)}
+                            className="w-full p-2 bg-white border border-slate-200 rounded-lg text-slate-900 font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500 text-xs"
+                          >
+                            {projectWorksites.map(w => (
+                              <option key={w.id} value={w.name}>
+                                {w.name} {w.location ? `(${w.location})` : ''}
+                              </option>
+                            ))}
+                            {stockyardsList.map(y => (
+                              <option key={y.id} value={y.yardName}>
+                                {y.yardName} [Stockyard]
+                              </option>
+                            ))}
+                            {projectWorksites.length === 0 && (
+                              <option value="Noida Sector-62 Metro Depot Site">Noida Sector-62 Metro Depot Site</option>
+                            )}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+
+                  </div>
                 </div>
 
               </div>
-
-            </div>
-          </div>
-
-          {/* STUDIO FOOTER BAR (WHITE THEME) */}
-          <div className="bg-white px-8 py-4 border-t border-slate-200 flex flex-wrap items-center justify-between text-xs shrink-0 gap-4">
-            <div className="flex flex-wrap items-center gap-4 text-slate-500">
-              <span className="font-semibold">
-                Stations: <strong className="text-slate-800">{stops.length + 2}</strong>
-              </span>
-              <span>·</span>
-              <span className="font-semibold">
-                Committed Fleet: <strong className="text-[#00705a]">{assignedFleet.length}</strong>
-              </span>
-              <span>·</span>
-              <span className="font-semibold">
-                Total Distance: <strong className="text-slate-800">{originLegDistance + stops.reduce((a, b) => a + (b.distanceKm || 0), 0)} KM</strong>
-              </span>
-              <span>·</span>
-              <span className="font-semibold">
-                Total TAT: <strong className="text-slate-800">~{(originLegTat + stops.reduce((a, b) => a + (b.estimatedTatHours || 0), 0)).toFixed(1)}h</strong>
-              </span>
             </div>
 
-            <div className="flex items-center gap-2.5">
+            {/* STUDIO FOOTER BAR (WHITE THEME - STREAMLINED ACTION BAR) */}
+            <div className="bg-white px-8 py-4 border-t border-slate-200 flex items-center justify-between text-xs shrink-0 gap-4">
               <button
                 type="button"
-                onClick={() => setIsCreateCorridorOpen(false)}
-                className="px-4 py-2 font-bold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors border border-slate-200"
+                onClick={() => setIsPreviewModalOpen(true)}
+                className="flex items-center gap-1.5 px-4 py-2 font-bold text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors border border-slate-200 cursor-pointer"
               >
-                Discard Blueprint
+                <Route size={14} className="text-[#00705a]" />
+                <span>Corridor Preview</span>
               </button>
-              <button
-                type="button"
-                onClick={handlePublishBlueprint}
-                disabled={submittingBlueprint}
-                className="px-6 py-2.5 bg-[#00705a] hover:bg-[#005a48] text-white font-black uppercase tracking-wider rounded-xl transition-all shadow-sm hover:shadow disabled:opacity-50"
-              >
-                {submittingBlueprint ? 'Publishing Blueprint...' : 'Publish Corridor Blueprint'}
-              </button>
+
+              <div className="flex items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setIsCreateCorridorOpen(false)}
+                  className="px-4 py-2 font-bold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors border border-slate-200 cursor-pointer"
+                >
+                  Discard Blueprint
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePublishBlueprint}
+                  disabled={submittingBlueprint}
+                  className="px-6 py-2.5 bg-[#00705a] hover:bg-[#005a48] text-white font-black uppercase tracking-wider rounded-xl transition-all shadow-sm hover:shadow disabled:opacity-50 cursor-pointer"
+                >
+                  {submittingBlueprint ? 'Publishing Blueprint...' : 'Publish Corridor Blueprint'}
+                </button>
+              </div>
+            </div>
+
+          </div>
+        )}
+
+        {/* RIGHT SIDEBAR DRAWER: CORRIDOR PREVIEW */}
+        {isPreviewModalOpen && (
+          <div className="fixed inset-0 z-60 overflow-hidden">
+            {/* Backdrop */}
+            <div
+              onClick={() => setIsPreviewModalOpen(false)}
+              className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity animate-in fade-in duration-200"
+            />
+
+            {/* Slide-over Right Sidebar Panel */}
+            <div className="fixed inset-y-0 right-0 max-w-full flex pl-6 sm:pl-10 z-10">
+              <div className="w-screen max-w-md sm:max-w-lg bg-[#0a1822] text-white shadow-2xl flex flex-col border-l border-slate-800 animate-in slide-in-from-right duration-250">
+                {/* Sidebar Header */}
+                <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between bg-[#0e1f2c] shrink-0">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center justify-center">
+                      <Route size={18} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-sm font-bold text-white tracking-tight truncate max-w-[200px]">
+                          {!isCreateCorridorOpen && selectedCorridor ? selectedCorridor.name : 'Corridor Preview'}
+                        </h3>
+                        <span className="px-2 py-0.5 text-[10px] font-bold text-emerald-400 bg-emerald-950/80 rounded-md border border-emerald-500/30">
+                          {!isCreateCorridorOpen && selectedCorridor ? selectedCorridor.corridorCode : 'Route Blueprint'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-0.5 truncate max-w-[240px]">
+                        {!isCreateCorridorOpen && selectedCorridor
+                          ? `${selectedCorridor.projectName} · ${selectedCorridor.totalDistanceKm} KM`
+                          : `${selectedProjectName ? `${selectedProjectName} · ` : ''}${corridorName || 'Custom Route Sequence'}`}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsPreviewModalOpen(false)}
+                    className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+                    title="Close sidebar"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                {/* Sidebar Blueprint Grid Canvas */}
+                <div
+                  className="flex-1 p-5 sm:p-6 bg-[#0a1822] text-white overflow-y-auto select-none"
+                  style={{
+                    backgroundImage: 'linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px)',
+                    backgroundSize: '24px 24px'
+                  }}
+                >
+                  {/* Header inside schematic */}
+                  <div className="flex items-center justify-between text-[10px] font-mono font-bold tracking-widest text-slate-400 mb-4 pb-2 border-b border-slate-800/80">
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                      ROUTE SEQUENCE / SCHEMATIC
+                    </span>
+                    <span>{previewNodes.length} STOPS</span>
+                  </div>
+
+                  {/* Stepped Blueprint Schematic */}
+                  <div
+                    className="relative my-3 transition-all"
+                    style={{ height: `${previewNodes.length * 76 + 10}px` }}
+                  >
+                    {/* SVG Dashed Step Connectors */}
+                    <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ minWidth: '100%' }}>
+                      {previewNodes.slice(0, -1).map((curr, idx) => {
+                        const next = previewNodes[idx + 1];
+                        const startX = curr.x;
+                        const startY = 28 + idx * 76;
+                        const endX = next.x;
+                        const endY = 28 + (idx + 1) * 76;
+
+                        let pathD = '';
+                        if (startX === endX) {
+                          pathD = `M ${startX} ${startY + 15} V ${endY - 15}`;
+                        } else {
+                          const midY = (startY + endY) / 2;
+                          pathD = `M ${startX} ${startY + 15} V ${midY} H ${endX} V ${endY - 15}`;
+                        }
+
+                        const isPending = next.status === 'pending_yard';
+                        return (
+                          <path
+                            key={`sidebar-link-${idx}`}
+                            d={pathD}
+                            fill="none"
+                            stroke={isPending ? '#f59e0b' : '#34d399'}
+                            strokeWidth="2.5"
+                            strokeDasharray="4 4"
+                            strokeOpacity={isPending ? 0.9 : 0.8}
+                          />
+                        );
+                      })}
+                    </svg>
+
+                    {/* Nodes with Badges and Labels */}
+                    {previewNodes.map((node, idx) => {
+                      const centerY = 28 + idx * 76;
+                      const isPending = node.status === 'pending_yard';
+                      const isYard = node.status === 'stockyard';
+                      const isOriginOrDest = node.type === 'origin' || node.type === 'destination';
+
+                      let circleClass = 'bg-[#182635] border-2 border-slate-500 text-slate-200';
+                      if (isOriginOrDest) {
+                        circleClass = 'bg-[#064e3b] border-2 border-emerald-400 text-emerald-300';
+                      } else if (isPending) {
+                        circleClass = 'bg-[#451a03] border-2 border-amber-500 text-amber-300';
+                      } else if (isYard) {
+                        circleClass = 'bg-[#064e3b] border-2 border-emerald-400 text-emerald-300';
+                      }
+
+                      return (
+                        <div
+                          key={`sidebar-node-${node.id}`}
+                          className="absolute flex items-center gap-3 transition-all"
+                          style={{
+                            top: `${centerY - 16}px`,
+                            left: `${node.x - 16}px`
+                          }}
+                        >
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs shrink-0 shadow-md ${circleClass}`}>
+                            {node.label}
+                          </div>
+                          <div className="leading-tight pr-3 bg-[#0a1822]/90 backdrop-blur-xs px-2.5 py-1.5 rounded-lg border border-slate-800 max-w-[240px] sm:max-w-[280px]">
+                            <div className={`font-bold text-xs truncate ${isPending ? 'text-amber-300' : 'text-white'}`}>
+                              {node.title}
+                            </div>
+                            <div className="text-[10px] text-slate-400 font-medium truncate mt-0.5">
+                              {node.subtitle}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Legend Notice */}
+                  <div className="mt-6 pt-3 border-t border-slate-800/80 flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                    <div className="flex items-center gap-2">
+                      <span className="w-3 h-0.5 bg-emerald-400 inline-block shrink-0"></span>
+                      <span>Dashed green lines = connected route</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sidebar Footer */}
+                <div className="p-4 bg-[#0e1f2c] border-t border-slate-800 flex items-center justify-between gap-3 shrink-0">
+                  <div className="text-xs text-slate-400 font-mono flex items-center gap-2">
+                    <span>{previewNodes.length} Stops</span>
+                    <span>·</span>
+                    <span>
+                      {!isCreateCorridorOpen && selectedCorridor
+                        ? `${selectedCorridor.totalDistanceKm} KM (~${selectedCorridor.estimatedCycleTimeHours}h)`
+                        : `${originLegDistance + stops.reduce((a, b) => a + (b.distanceKm || 0), 0)} KM`}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsPreviewModalOpen(false)}
+                    className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-xl transition-all cursor-pointer border border-slate-700"
+                  >
+                    Close Sidebar
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
-
-        </div>
-      )}
+        )}
 
       {/* MODAL 1B: TRANSPORT MODE PROJECT SYNC CONFIRMATION (WHITE THEME) */}
       {modePromptModal && modePromptModal.isOpen && (

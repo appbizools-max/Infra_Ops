@@ -134,7 +134,7 @@ export default function AttendanceTrackerScreen({ navigation }: any) {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
-      <StatusBar style="dark" translucent={true} backgroundColor="transparent" />
+      <StatusBar style="dark" />
 
       {/* HEADER BAR */}
       <View style={styles.header}>

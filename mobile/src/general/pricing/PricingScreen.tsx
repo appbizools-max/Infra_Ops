@@ -12,7 +12,7 @@ export default function PricingScreen() {
   
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <StatusBar style="light" backgroundColor="#0a0a0a" translucent={false} />
+      <StatusBar style="light" />
       
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.toggleDrawer()} style={styles.menuButton}>

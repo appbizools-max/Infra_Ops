@@ -6303,7 +6303,7 @@ app.get('/api/tenant/stockyards/:id/projects/:projectId', async (req, res) => {
     try {
         const { id, projectId } = req.params;
         // 1. Fetch Project Info
-        const projRes = await pool.query('SELECT id, project_id as "projectId", name, customer, commodity, location, contract_quantity as "contractQuantity", contract_quantity_unit as "contractQuantityUnit" FROM tenant_projects WHERE project_id = $1 OR id::text = $1 LIMIT 1', [projectId]);
+        const projRes = await pool.query('SELECT id, project_id as "projectId", name, customer, commodity, location, contract_quantity as "contractQuantity", contract_quantity_unit as "contractQuantityUnit", contract_start_date as "startDate", contract_end_date as "endDate" FROM tenant_projects WHERE project_id = $1 OR id::text = $1 LIMIT 1', [projectId]);
         const projectInfo = projRes.rows[0] || { projectId, name: projectId };
         // 2. Fetch Aggregated Materials for this Project in this Yard
         const matRes = await pool.query(`

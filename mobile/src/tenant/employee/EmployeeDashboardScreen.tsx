@@ -100,7 +100,7 @@ export default function EmployeeDashboardScreen({ navigation }: any) {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
-      <StatusBar style="dark" translucent={true} backgroundColor="transparent" />
+      <StatusBar style="dark" />
 
       {/* HEADER BAR */}
       <View style={styles.header}>
@@ -287,13 +287,13 @@ export default function EmployeeDashboardScreen({ navigation }: any) {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#FAFAFA',
+    backgroundColor: '#FFFFFF',
   },
   loaderContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FAFAFA',
+    backgroundColor: '#FFFFFF',
   },
   header: {
     flexDirection: 'row',
@@ -302,7 +302,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: Platform.OS === 'ios' ? 12 : 36,
     paddingBottom: 12,
-    backgroundColor: '#FAFAFA',
+    backgroundColor: '#FFFFFF',
   },
   menuBtn: {
     padding: 4,

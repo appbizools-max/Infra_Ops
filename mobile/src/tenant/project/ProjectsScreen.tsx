@@ -21,6 +21,7 @@ interface Project {
   otherData?: string;
   status: 'Active' | 'Completed' | 'Planning' | 'On Hold';
   is_pinned?: boolean;
+  customFields?: any;
 }
 
 export default function ProjectsScreen() {

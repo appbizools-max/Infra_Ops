@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { DrawerNavigationProp } from '@react-navigation/drawer';
 import { getAuth } from '@react-native-firebase/auth';
 import { BASE_URL, mobileApiFetch } from '../../services/api';
 import { Picker } from '@react-native-picker/picker';
@@ -153,7 +154,7 @@ export default function ProfileScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: Platform.OS === 'ios' ? insets.top : 0 }]}>
-      <StatusBar style="dark" translucent={true} backgroundColor="transparent" />
+      <StatusBar style="dark" />
 
       <View style={[styles.header, { paddingTop: Platform.OS === 'android' ? insets.top + 10 : 16 }]}>
         <View style={styles.headerLeft}>
@@ -226,7 +227,7 @@ export default function ProfileScreen() {
                 <ProfileInputField icon="business-outline" label="Company Name" value={editForm?.companyName} onChangeText={(val: string) => handleInputChange('companyName', val)} />
                 <CustomDropdown
                   label="Industry Type"
-                  selectedValue={INDUSTRIES.includes(editForm?.industryType || '') ? editForm?.industryType : (editForm?.industryType ? 'Other' : '')}
+                  selectedValue={INDUSTRIES.includes(editForm?.industryType || '') ? (editForm?.industryType || '') : (editForm?.industryType ? 'Other' : '')}
                   options={[...INDUSTRIES, 'Other']}
                   onValueChange={(val) => handleInputChange('industryType', val)}
                   placeholder="Select Industry"

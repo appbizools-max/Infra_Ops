@@ -1787,7 +1787,7 @@ const styles = StyleSheet.create({
 
   // ─── Splash / Loading Overlay ─────────────────────────────────────
   splashOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: '#001538',
     alignItems: 'center',
     justifyContent: 'center',

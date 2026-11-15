@@ -1452,9 +1452,6 @@ const styles = StyleSheet.create({
 
 
   /* ── Kept for other steps ── */
-  reviewContainer: {
-    paddingVertical: 10,
-  },
   reviewHeader: {
     flexDirection: 'row',
     alignItems: 'center',

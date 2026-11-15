@@ -186,6 +186,7 @@ export default function TenantLayout() {
       subItems: [
         { name: 'Fleet Hub (Trucks & Machinery)', path: '/tenant/vehicle-master', icon: Layers },
         { name: 'Fuel, Trips & Running Logs', path: '/tenant/fleet-operations', icon: Gauge },
+        { name: 'Temporary Hired Vehicles', path: '/tenant/temporary-vehicles', icon: Clock },
         { name: 'FMS Employees Portal', path: '/tenant/fms-employee', icon: UserCheck },
       ]
     },
@@ -225,6 +226,7 @@ export default function TenantLayout() {
     if (
       location.pathname.includes('/tenant/vehicle-master') ||
       location.pathname.includes('/tenant/fleet-operations') ||
+      location.pathname.includes('/tenant/temporary-vehicles') ||
       location.pathname.includes('/tenant/fms-employee')
     ) {
       setOpenMenus(prev => ({ ...prev, 'Fleet & Logistics': true }));

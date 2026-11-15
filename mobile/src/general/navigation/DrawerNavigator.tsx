@@ -22,6 +22,15 @@ import DivisionsScreen from '../../tenant/divisions/DivisionsScreen';
 import DepartmentsScreen from '../../tenant/departments/DepartmentsScreen';
 import RolesScreen from '../../tenant/roles/RolesScreen';
 import AttendanceTrackerScreen from '../../tenant/hr/AttendanceTrackerScreen';
+import StockyardScreen from '../../tenant/stockyard/StockyardScreen';
+import OperationsCorridorsScreen from '../../tenant/operations-corridors/OperationsCorridorsScreen';
+import DispatchWaybillsScreen from '../../tenant/dispatch-waybills/DispatchWaybillsScreen';
+import FleetHubScreen from '../../tenant/fleet/FleetHubScreen';
+import FleetOperationsScreen from '../../tenant/fleet/FleetOperationsScreen';
+import FmsEmployeeScreen from '../../tenant/fleet/FmsEmployeeScreen';
+import VehicleAssignmentScreen from '../../tenant/fleet/VehicleAssignmentScreen';
+import TemporaryVehiclesScreen from '../../tenant/fleet/TemporaryVehiclesScreen';
+import WorkOrdersScreen from '../../tenant/workorder/WorkOrdersScreen';
 import { BASE_URL, mobileApiFetch } from '../../services/api';
 
 const Drawer = createDrawerNavigator();
@@ -31,6 +40,8 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
   const currentRoute = props.state.routes[props.state.index]?.name;
   const [profileData, setProfileData] = useState<any>(null);
   const [isProjectsOpen, setIsProjectsOpen] = useState(false);
+  const [isOperationsOpen, setIsOperationsOpen] = useState(true);
+  const [isFleetOpen, setIsFleetOpen] = useState(false);
 
   const isHR = 
     profileData?.userType === 'team_member' && (
@@ -84,7 +95,7 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
 
   return (
     <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
-      <StatusBar style="dark" translucent={true} backgroundColor="transparent" />
+      <StatusBar style="dark" />
 
       <ScrollView style={styles.scrollArea} showsVerticalScrollIndicator={false}>
         {/* Premium Minimalist White Profile Header */}
@@ -174,6 +185,123 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
           </>
         )}
 
+        {/* WORK ORDERS */}
+        <DrawerItem label="Work Orders" iconName="clipboard" routeName="Work Orders" />
+
+        {/* OPERATIONS & STOCKYARD */}
+        <TouchableOpacity 
+          style={[styles.drawerItem, (currentRoute === 'Stockyard Management' || currentRoute === 'Operations Corridors' || currentRoute === 'Dispatch Waybills') && styles.activeDrawerItem]}
+          onPress={() => setIsOperationsOpen(!isOperationsOpen)}
+        >
+          <Feather 
+            name="layers" 
+            size={20} 
+            color={(currentRoute === 'Stockyard Management' || currentRoute === 'Operations Corridors' || currentRoute === 'Dispatch Waybills') ? '#10B981' : '#64748B'} 
+            style={styles.drawerIcon} 
+          />
+          <Text style={[styles.drawerLabel, (currentRoute === 'Stockyard Management' || currentRoute === 'Operations Corridors' || currentRoute === 'Dispatch Waybills') && styles.activeDrawerLabel, { flex: 1 }]}>
+            Operations & Stockyard
+          </Text>
+          <Feather 
+            name={isOperationsOpen ? 'chevron-down' : 'chevron-right'} 
+            size={16} 
+            color="#64748B" 
+          />
+        </TouchableOpacity>
+
+        {isOperationsOpen && (
+          <View style={{ paddingLeft: 32, backgroundColor: '#F8FAFC', borderBottomWidth: 1, borderBottomColor: '#E2E8F0', paddingVertical: 4 }}>
+            <TouchableOpacity 
+              style={styles.subDrawerItem} 
+              onPress={() => props.navigation.navigate('Stockyard Management')}
+            >
+              <Feather name="layers" size={16} color={currentRoute === 'Stockyard Management' ? '#10B981' : '#64748B'} style={{ marginRight: 12 }} />
+              <Text style={[styles.subDrawerLabel, currentRoute === 'Stockyard Management' && styles.activeDrawerLabel]}>Stockyard Hubs</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.subDrawerItem} 
+              onPress={() => props.navigation.navigate('Operations Corridors')}
+            >
+              <Feather name="git-merge" size={16} color={currentRoute === 'Operations Corridors' ? '#10B981' : '#64748B'} style={{ marginRight: 12 }} />
+              <Text style={[styles.subDrawerLabel, currentRoute === 'Operations Corridors' && styles.activeDrawerLabel]}>Operations Corridors</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.subDrawerItem} 
+              onPress={() => props.navigation.navigate('Dispatch Waybills')}
+            >
+              <Feather name="file-text" size={16} color={currentRoute === 'Dispatch Waybills' ? '#10B981' : '#64748B'} style={{ marginRight: 12 }} />
+              <Text style={[styles.subDrawerLabel, currentRoute === 'Dispatch Waybills' && styles.activeDrawerLabel]}>Dispatch Waybills</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* FLEET & LOGISTICS */}
+        <TouchableOpacity 
+          style={[styles.drawerItem, currentRoute === 'Fleet Hub' && styles.activeDrawerItem]}
+          onPress={() => setIsFleetOpen(!isFleetOpen)}
+        >
+          <Feather 
+            name="truck" 
+            size={20} 
+            color={currentRoute === 'Fleet Hub' ? '#10B981' : '#64748B'} 
+            style={styles.drawerIcon} 
+          />
+          <Text style={[styles.drawerLabel, currentRoute === 'Fleet Hub' && styles.activeDrawerLabel, { flex: 1 }]}>
+            Fleet & Machinery
+          </Text>
+          <Feather 
+            name={isFleetOpen ? 'chevron-down' : 'chevron-right'} 
+            size={16} 
+            color="#64748B" 
+          />
+        </TouchableOpacity>
+
+        {isFleetOpen && (
+          <View style={{ paddingLeft: 32, backgroundColor: '#F8FAFC', borderBottomWidth: 1, borderBottomColor: '#E2E8F0', paddingVertical: 4 }}>
+            <TouchableOpacity 
+              style={styles.subDrawerItem} 
+              onPress={() => props.navigation.navigate('Fleet Hub')}
+            >
+              <Feather name="truck" size={16} color={currentRoute === 'Fleet Hub' ? '#10B981' : '#64748B'} style={{ marginRight: 12 }} />
+              <Text style={[styles.subDrawerLabel, currentRoute === 'Fleet Hub' && styles.activeDrawerLabel]}>Fleet & Equipment Hub</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.subDrawerItem} 
+              onPress={() => props.navigation.navigate('Fleet Operations')}
+            >
+              <Feather name="activity" size={16} color={currentRoute === 'Fleet Operations' ? '#10B981' : '#64748B'} style={{ marginRight: 12 }} />
+              <Text style={[styles.subDrawerLabel, currentRoute === 'Fleet Operations' && styles.activeDrawerLabel]}>Fuel & Running Logs</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.subDrawerItem} 
+              onPress={() => props.navigation.navigate('Temporary Vehicles')}
+            >
+              <Feather name="clock" size={16} color={currentRoute === 'Temporary Vehicles' ? '#10B981' : '#64748B'} style={{ marginRight: 12 }} />
+              <Text style={[styles.subDrawerLabel, currentRoute === 'Temporary Vehicles' && styles.activeDrawerLabel]}>Temporary Hired Fleet</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.subDrawerItem} 
+              onPress={() => props.navigation.navigate('Vehicle Assignments')}
+            >
+              <Feather name="link" size={16} color={currentRoute === 'Vehicle Assignments' ? '#10B981' : '#64748B'} style={{ marginRight: 12 }} />
+              <Text style={[styles.subDrawerLabel, currentRoute === 'Vehicle Assignments' && styles.activeDrawerLabel]}>Vehicle Assignments</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.subDrawerItem} 
+              onPress={() => props.navigation.navigate('My Vehicle & Shifts')}
+            >
+              <Feather name="user-check" size={16} color={currentRoute === 'My Vehicle & Shifts' ? '#10B981' : '#64748B'} style={{ marginRight: 12 }} />
+              <Text style={[styles.subDrawerLabel, currentRoute === 'My Vehicle & Shifts' && styles.activeDrawerLabel]}>My Vehicle & Shifts (Driver)</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* ADMIN ONLY RESTRICTED MENU */}
         <View style={styles.divider} />
 
@@ -235,7 +363,7 @@ function DashboardWrapper(props: any) {
 
   if (loading) {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FAFAFA' }}>
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF' }}>
         <ActivityIndicator size="large" color="#0F172A" />
       </View>
     );
@@ -272,13 +400,18 @@ export default function DrawerNavigator() {
       <Drawer.Screen name="Dashboard" component={DashboardWrapper} />
       <Drawer.Screen name="Team" component={TeamScreen} />
 
-      {/* 7 Core Modules -> Pointing to Coming Soon for now */}
-      <Drawer.Screen name="Client Portal" component={ModuleComingSoonScreen} />
-      <Drawer.Screen name="Vendor Operations" component={ModuleComingSoonScreen} />
-      <Drawer.Screen name="Material Management" component={ModuleComingSoonScreen} />
-      <Drawer.Screen name="Labor Management" component={ModuleComingSoonScreen} />
+      {/* Real Modules */}
       <Drawer.Screen name="Project Management" component={ProjectsScreen} />
       <Drawer.Screen name="Work Sites" component={WorkSitesScreen} />
+      <Drawer.Screen name="Work Orders" component={WorkOrdersScreen} />
+      <Drawer.Screen name="Stockyard Management" component={StockyardScreen} />
+      <Drawer.Screen name="Operations Corridors" component={OperationsCorridorsScreen} />
+      <Drawer.Screen name="Dispatch Waybills" component={DispatchWaybillsScreen} />
+      <Drawer.Screen name="Fleet Hub" component={FleetHubScreen} />
+      <Drawer.Screen name="Fleet Operations" component={FleetOperationsScreen} />
+      <Drawer.Screen name="Temporary Vehicles" component={TemporaryVehiclesScreen} />
+      <Drawer.Screen name="Vehicle Assignments" component={VehicleAssignmentScreen} />
+      <Drawer.Screen name="My Vehicle & Shifts" component={FmsEmployeeScreen} />
       <Drawer.Screen name="Access Controls" component={AccessControlsScreen} />
       <Drawer.Screen name="HR" component={HRScreen} />
       <Drawer.Screen name="Attendance Tracker" component={AttendanceTrackerScreen} />

@@ -4,7 +4,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import TenantDashboardScreen from '../../tenant/dashboard/TenantDashboardScreen';
-import ModuleComingSoonScreen from '../../tenant/modules/ModuleComingSoonScreen';
+import ProjectsScreen from '../../tenant/project/ProjectsScreen';
+import StockyardScreen from '../../tenant/stockyard/StockyardScreen';
+import ProfileScreen from '../profile/ProfileScreen';
+import TeamScreen from '../../tenant/team/TeamScreen';
 
 const Tab = createBottomTabNavigator();
 
@@ -40,12 +43,12 @@ export default function TabNavigator() {
           let iconName: any = 'home';
           if (route.name === 'Home') {
             iconName = focused ? 'home' : 'home-outline';
-          } else if (route.name === 'Tenants') {
-            iconName = focused ? 'people' : 'people-outline';
           } else if (route.name === 'Projects') {
             iconName = focused ? 'briefcase' : 'briefcase-outline';
-          } else if (route.name === 'Reports') {
-            iconName = focused ? 'bar-chart' : 'bar-chart-outline';
+          } else if (route.name === 'Stockyard') {
+            iconName = focused ? 'cube' : 'cube-outline';
+          } else if (route.name === 'Team') {
+            iconName = focused ? 'people' : 'people-outline';
           } else if (route.name === 'Profile') {
             iconName = focused ? 'person' : 'person-outline';
           }
@@ -58,20 +61,20 @@ export default function TabNavigator() {
         component={TenantDashboardScreen} 
       />
       <Tab.Screen 
-        name="Tenants" 
-        component={ModuleComingSoonScreen} 
-      />
-      <Tab.Screen 
         name="Projects" 
-        component={ModuleComingSoonScreen} 
+        component={ProjectsScreen} 
       />
       <Tab.Screen 
-        name="Reports" 
-        component={ModuleComingSoonScreen} 
+        name="Stockyard" 
+        component={StockyardScreen} 
+      />
+      <Tab.Screen 
+        name="Team" 
+        component={TeamScreen} 
       />
       <Tab.Screen 
         name="Profile" 
-        component={ModuleComingSoonScreen} 
+        component={ProfileScreen} 
       />
     </Tab.Navigator>
   );

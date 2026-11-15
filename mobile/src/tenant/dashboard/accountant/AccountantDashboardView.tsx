@@ -46,7 +46,7 @@ export default function AccountantDashboardView({ profile, navigation }: Account
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FFFFFF',
   },
   content: {
     padding: 16,

@@ -8,7 +8,7 @@ import {
   Train, Container, Printer, Download, Eye, ExternalLink,
   Calendar, Hash, Compass, ClipboardCheck, Award, FileSpreadsheet,
   CheckSquare, ArrowLeftRight, Clock, Navigation, CornerDownRight,
-  Edit2, Trash2, Shield, Calculator, Wrench, Activity
+  Edit2, Trash2, Shield, Calculator, Wrench, Activity, Database, BarChart3
 } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
 import { apiFetch } from '../../../lib/api';
@@ -238,6 +238,8 @@ interface ProjectStockyardDetail {
     location?: string;
     contractQuantity?: number;
     contractQuantityUnit?: string;
+    startDate?: string;
+    endDate?: string;
   };
   metrics: {
     totalReceived: number;
@@ -422,20 +424,18 @@ function EquipmentUsedPicker({
                   <div
                     key={eq.id}
                     onClick={() => handleToggleSelect(eq)}
-                    className={`p-2.5 rounded-xl border text-xs cursor-pointer transition-all flex items-start justify-between gap-2 ${
-                      isMaint
-                        ? 'bg-rose-50/50 border-rose-200 opacity-70 cursor-not-allowed'
-                        : isSelected
+                    className={`p-2.5 rounded-xl border text-xs cursor-pointer transition-all flex items-start justify-between gap-2 ${isMaint
+                      ? 'bg-rose-50/50 border-rose-200 opacity-70 cursor-not-allowed'
+                      : isSelected
                         ? 'bg-emerald-50 border-emerald-400 ring-2 ring-emerald-500/20 shadow-xs'
                         : 'bg-white border-slate-200 hover:border-slate-300'
-                    }`}
+                      }`}
                   >
                     <div className="space-y-0.5">
                       <div className="flex items-center gap-1.5">
                         <span className="font-black text-slate-900">{eq.equipmentNumber}</span>
-                        <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
-                          isMaint ? 'bg-rose-100 text-rose-700' : eq.status === 'Active' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'
-                        }`}>
+                        <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${isMaint ? 'bg-rose-100 text-rose-700' : eq.status === 'Active' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'
+                          }`}>
                           {eq.status}
                         </span>
                       </div>
@@ -552,6 +552,32 @@ function EquipmentUsedPicker({
   );
 }
 
+const DEFAULT_ROAD_VEHICLES = [
+  { vehicleNumber: 'OD-05-BB-8921', vehicleType: 'BharatBenz 3528C Tipper (35T)', payloadCapacity: 35.0, driverName: 'Rajesh Kumar Swain', driverPhone: '+91 94371 88921' },
+  { vehicleNumber: 'OD-05-AA-7712', vehicleType: 'Tata Prima 2830.K Tipper (28T)', payloadCapacity: 28.0, driverName: 'Sunil Pradhan', driverPhone: '+91 98610 22134' },
+  { vehicleNumber: 'OD-14-CC-4019', vehicleType: 'Ashok Leyland 2820 Tipper (28T)', payloadCapacity: 28.0, driverName: 'Dhananjay Singh', driverPhone: '+91 97780 44551' },
+  { vehicleNumber: 'UP-65-AR-5531', vehicleType: 'Volvo FMX 460 Heavy Tipper (40T)', payloadCapacity: 40.0, driverName: 'Mohammad Rafiq', driverPhone: '+91 91250 88901' },
+  { vehicleNumber: 'MP-17-TG-1290', vehicleType: 'BharatBenz 2823R Haulage (28T)', payloadCapacity: 28.0, driverName: 'Rameshwar Yadav', driverPhone: '+91 94251 33412' },
+  { vehicleNumber: 'DL-1M-4412', vehicleType: 'Tata Signa 3523.TK Tipper (35T)', payloadCapacity: 35.0, driverName: 'Gurpreet Singh', driverPhone: '+91 98100 77889' },
+  { vehicleNumber: 'UP-14-BT-9021', vehicleType: 'Ashok Leyland 3520 Tipper (35T)', payloadCapacity: 35.0, driverName: 'Rajesh Kumar', driverPhone: '+91 98765 43210' },
+  { vehicleNumber: 'JH-09-AK-6612', vehicleType: 'Mahindra Blazo X 35 (35T)', payloadCapacity: 35.0, driverName: 'Bikash Mahato', driverPhone: '+91 99341 66120' },
+  { vehicleNumber: 'CG-04-MB-3398', vehicleType: 'Tata Prima 3530.K Tipper (35T)', payloadCapacity: 35.0, driverName: 'Devendra Patel', driverPhone: '+91 98271 33980' },
+  { vehicleNumber: 'WB-23-GH-8812', vehicleType: 'Volvo FM 420 Heavy Tipper (40T)', payloadCapacity: 40.0, driverName: 'Subhasish Roy', driverPhone: '+91 94330 88120' },
+];
+
+const DEFAULT_RAIL_WAGONS = [
+  { vehicleNumber: 'BOXN-94102', vehicleType: 'BOXN Open Freight Wagon', payloadCapacity: 58.5, driverName: 'Loco Pilot K. K. Verma', driverPhone: '+91 97524 10021' },
+  { vehicleNumber: 'BOXNHL-63211', vehicleType: 'BOXNHL High-Capacity Open Wagon', payloadCapacity: 61.0, driverName: 'Loco Pilot V. N. Sharma', driverPhone: '+91 97524 10022' },
+  { vehicleNumber: 'BCNHL-88219', vehicleType: 'BCNHL Covered Bulk Wagon', payloadCapacity: 63.5, driverName: 'Loco Pilot S. Dasgupta', driverPhone: '+91 97524 10023' },
+  { vehicleNumber: 'BOBYN-41008', vehicleType: 'BOBYN Hopper Ballast Wagon', payloadCapacity: 55.0, driverName: 'Loco Pilot Anup Mishra', driverPhone: '+91 97524 10024' },
+  { vehicleNumber: 'BOXNHS-72991', vehicleType: 'BOXNHS High-Speed Open Wagon', payloadCapacity: 59.5, driverName: 'Loco Pilot M. R. Naik', driverPhone: '+91 97524 10025' },
+  { vehicleNumber: 'BCN-52109', vehicleType: 'BCN Covered Freight Wagon', payloadCapacity: 56.0, driverName: 'Loco Pilot P. C. Tiwari', driverPhone: '+91 97524 10026' },
+  { vehicleNumber: 'BOXN-94103', vehicleType: 'BOXN Open Freight Wagon', payloadCapacity: 58.5, driverName: 'Loco Pilot Rajesh Soren', driverPhone: '+91 97524 10027' },
+  { vehicleNumber: 'BOXNHL-63215', vehicleType: 'BOXNHL High-Capacity Open Wagon', payloadCapacity: 61.0, driverName: 'Loco Pilot A. K. Behera', driverPhone: '+91 97524 10028' },
+  { vehicleNumber: 'BOBYN-41012', vehicleType: 'BOBYN Hopper Ballast Wagon', payloadCapacity: 55.0, driverName: 'Loco Pilot Tarun Roy', driverPhone: '+91 97524 10029' },
+  { vehicleNumber: 'BOXN-94108', vehicleType: 'BOXN Open Freight Wagon', payloadCapacity: 58.5, driverName: 'Loco Pilot Deepak Pandey', driverPhone: '+91 97524 10030' },
+];
+
 export default function StockyardPage() {
   const { currentUser } = useAuth();
 
@@ -577,6 +603,33 @@ export default function StockyardPage() {
   const [racks, setRacks] = useState<StockyardRack[]>([]);
   const [rackInventory, setRackInventory] = useState<RackInventory[]>([]);
   const [shiftsHistory, setShiftsHistory] = useState<InternalShift[]>([]);
+
+  // Vehicles & Wagons Roster State for Inward Receipts
+  const [availableVehicles, setAvailableVehicles] = useState<any[]>([]);
+  const [isReceiveVehicleModalOpen, setIsReceiveVehicleModalOpen] = useState(false);
+  const [receiveVehicleMode, setReceiveVehicleMode] = useState<'TRUCK' | 'RAIL_RAKE'>('TRUCK');
+  const [receiveVehicleSearch, setReceiveVehicleSearch] = useState('');
+  const [receiveVehicleForm, setReceiveVehicleForm] = useState({
+    transportMode: 'TRUCK' as 'TRUCK' | 'RAIL_RAKE',
+    vehicleNumber: '',
+    vehicleType: '',
+    driverName: '',
+    driverPhone: '',
+    projectId: '',
+    projectName: '',
+    materialName: '',
+    unit: 'MT',
+    rackId: '',
+    rackName: '',
+    sourceLocation: '',
+    supplierName: '',
+    challanNumber: '',
+    weighbridgeSlipNumber: '',
+    grossWeight: '52.40',
+    tareWeight: '17.20',
+    netWeight: '35.20',
+    remarks: 'Delivered & verified at stockyard weighbridge'
+  });
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -869,6 +922,49 @@ export default function StockyardPage() {
     );
   }, [transactions]);
 
+  // Project Weight Scope & Cumulative Balance Calculations
+  const projectScopeWeight = useMemo(() => {
+    if (projectDetailData?.project?.contractQuantity && Number(projectDetailData.project.contractQuantity) > 0) {
+      return Number(projectDetailData.project.contractQuantity);
+    }
+    const inv = projectInventory.find(p => p.projectId === selectedProjectId);
+    if (inv && inv.plannedQuantity && Number(inv.plannedQuantity) > 0) {
+      return Number(inv.plannedQuantity);
+    }
+    return 50000; // Standard 50,000 MT target baseline
+  }, [projectDetailData, projectInventory, selectedProjectId]);
+
+  const totalReceiptsWeight = useMemo(() => {
+    const receipts = projectDetailData?.inwardReceipts || [];
+    return receipts.reduce((sum, r) => sum + (parseFloat(String(r.quantity || r.netWeight || 0)) || 0), 0);
+  }, [projectDetailData?.inwardReceipts]);
+
+  const remainingProjectBalance = useMemo(() => {
+    return Math.max(0, parseFloat((projectScopeWeight - totalReceiptsWeight).toFixed(2)));
+  }, [projectScopeWeight, totalReceiptsWeight]);
+
+  const projectDeliveryProgressPct = useMemo(() => {
+    if (projectScopeWeight <= 0) return 0;
+    return Math.min(100, parseFloat(((totalReceiptsWeight / projectScopeWeight) * 100).toFixed(1)));
+  }, [totalReceiptsWeight, projectScopeWeight]);
+
+  const receiptBalancesMap = useMemo(() => {
+    const receipts = projectDetailData?.inwardReceipts || [];
+    const sorted = [...receipts].sort((a, b) => new Date(a.gateInTime || a.createdAt).getTime() - new Date(b.gateInTime || b.createdAt).getTime());
+    let runningTotal = 0;
+    const map = new Map<number | string, { runningDelivered: number; remainingBalance: number }>();
+    for (const r of sorted) {
+      const qty = parseFloat(String(r.quantity || r.netWeight || 0)) || 0;
+      runningTotal += qty;
+      const remaining = Math.max(0, parseFloat((projectScopeWeight - runningTotal).toFixed(2)));
+      map.set(r.id, {
+        runningDelivered: parseFloat(runningTotal.toFixed(2)),
+        remainingBalance: remaining
+      });
+    }
+    return map;
+  }, [projectDetailData?.inwardReceipts, projectScopeWeight]);
+
   // Universal CSV Exporter
   const downloadCsv = (filename: string, headers: string[], rows: (string | number | undefined | null)[][]) => {
     const csvContent = [
@@ -1016,6 +1112,12 @@ export default function StockyardPage() {
       if (pRes.ok) {
         const pData = await pRes.json();
         setProjects(Array.isArray(pData) ? pData : []);
+      }
+
+      const vRes = await apiFetch('/api/tenant/vehicles');
+      if (vRes.ok) {
+        const vData = await vRes.json();
+        setAvailableVehicles(Array.isArray(vData) ? vData : []);
       }
     } catch (err) {
       console.error('Error fetching master data:', err);
@@ -1474,6 +1576,120 @@ export default function StockyardPage() {
       }
     } catch (err: any) {
       setFormError(err.message || 'Error recording material receipt.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Open Dedicated Receive Vehicle / Rail Wagon Modal
+  const handleOpenReceiveVehicleModal = (prefillProjectId?: string) => {
+    setFormError(null);
+    const targetProjId = prefillProjectId || selectedProjectId || projectInventory[0]?.projectId || projects[0]?.projectId || projects[0]?.id || '';
+    const matchedProj = projects.find(p => p.projectId === targetProjId || p.id === targetProjId) || (projectDetailData ? { ...projectDetailData.project, id: projectDetailData.project.projectId } : null);
+    const defaultMat = projectDetailData?.materials[0]?.materialName || projectInventory[0]?.materialName || matchedProj?.commodity || 'Track Ballast 40mm (RDSO)';
+    const defaultRack = racks[0];
+    const defaultVehicle = DEFAULT_ROAD_VEHICLES[0];
+
+    setReceiveVehicleMode('TRUCK');
+    setReceiveVehicleSearch('');
+    setReceiveVehicleForm({
+      transportMode: 'TRUCK',
+      vehicleNumber: defaultVehicle.vehicleNumber,
+      vehicleType: defaultVehicle.vehicleType,
+      driverName: defaultVehicle.driverName,
+      driverPhone: defaultVehicle.driverPhone,
+      projectId: targetProjId,
+      projectName: matchedProj?.name || targetProjId,
+      materialName: defaultMat,
+      unit: 'MT',
+      rackId: defaultRack ? String(defaultRack.id) : '',
+      rackName: defaultRack ? defaultRack.rackName : '',
+      sourceLocation: 'Rewa Quarry Pit 04 Face',
+      supplierName: 'National Mineral Quarry Division',
+      challanNumber: `DC-2026-${Math.floor(1000 + Math.random() * 9000)}`,
+      weighbridgeSlipNumber: `WB-REC-${Math.floor(10000 + Math.random() * 90000)}`,
+      grossWeight: '52.40',
+      tareWeight: '17.20',
+      netWeight: '35.20',
+      remarks: 'Certified automated weighbridge receipt & inward entry'
+    });
+    setIsReceiveVehicleModalOpen(true);
+  };
+
+  // Submit Vehicle / Rail Wagon Receipt
+  const handleSubmitReceiveVehicle = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedYard) return;
+    setFormError(null);
+
+    const grossNum = parseFloat(receiveVehicleForm.grossWeight) || 0;
+    const tareNum = parseFloat(receiveVehicleForm.tareWeight) || 0;
+    let netNum = parseFloat(receiveVehicleForm.netWeight) || 0;
+    if (grossNum > 0 && tareNum > 0 && grossNum > tareNum) {
+      netNum = parseFloat((grossNum - tareNum).toFixed(2));
+    }
+
+    if (!receiveVehicleForm.vehicleNumber.trim()) {
+      showToast('Please enter or select a vehicle or rail wagon number', 'error');
+      return;
+    }
+    if (netNum <= 0) {
+      showToast('Valid gross and tare weights resulting in positive net weight are required', 'error');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const proj = projects.find(p => p.projectId === receiveVehicleForm.projectId || p.id === receiveVehicleForm.projectId);
+      const payload = {
+        firebaseUid: currentUser?.uid,
+        transportMode: receiveVehicleForm.transportMode,
+        projectId: receiveVehicleForm.projectId,
+        projectName: proj?.name || receiveVehicleForm.projectName || receiveVehicleForm.projectId,
+        materialName: receiveVehicleForm.materialName,
+        unit: receiveVehicleForm.unit || 'MT',
+        vehicleNumber: receiveVehicleForm.vehicleNumber.trim().toUpperCase(),
+        driverName: receiveVehicleForm.driverName,
+        driverPhone: receiveVehicleForm.driverPhone,
+        sourceLocation: receiveVehicleForm.sourceLocation,
+        supplierName: receiveVehicleForm.supplierName,
+        challanNumber: receiveVehicleForm.challanNumber,
+        weighbridgeSlipNumber: receiveVehicleForm.weighbridgeSlipNumber,
+        grossWeight: grossNum,
+        tareWeight: tareNum,
+        netWeight: netNum,
+        quantity: netNum,
+        dispatchQuantity: netNum,
+        rackId: receiveVehicleForm.rackId || null,
+        rackName: receiveVehicleForm.rackName || null,
+        remarks: receiveVehicleForm.remarks || `Inward ${receiveVehicleForm.transportMode === 'RAIL_RAKE' ? 'Rail Wagon' : 'Vehicle'} received`
+      };
+
+      const res = await apiFetch(`/api/tenant/stockyards/${selectedYard.id}/receipt`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to record vehicle receipt.');
+
+      showToast(`${receiveVehicleForm.transportMode === 'RAIL_RAKE' ? 'Rail Wagon' : 'Vehicle'} ${receiveVehicleForm.vehicleNumber} received! Net: ${netNum} MT`, 'success');
+      setIsReceiveVehicleModalOpen(false);
+
+      if (data.transaction) {
+        setActiveGrnReceipt(data.transaction);
+        setIsGrnSlipModalOpen(true);
+      }
+
+      await fetchYardDetails(selectedYard.id);
+      await fetchMasterData(true);
+
+      if (selectedProjectId) {
+        await fetchProjectStockyardDetails(selectedYard.id, selectedProjectId);
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Error executing vehicle receipt', 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -2121,68 +2337,6 @@ export default function StockyardPage() {
                   </span>
                 </div>
               </div>
-
-              {/* Action Buttons: Inward, Shift Stock Within Yard, Outward Issue, Reconcile */}
-              <div className="flex flex-wrap items-center gap-2.5">
-                <button
-                  onClick={() => handleOpenDeepStockAdd()}
-                  className="flex items-center gap-2 bg-[#00705a] hover:bg-[#005a48] text-white text-xs font-black uppercase tracking-wider px-4 py-2.5 rounded-xl shadow-sm transition-all"
-                >
-                  <ArrowDownLeft size={16} />
-                  <span>+ Inward Stock Add</span>
-                </button>
-
-                {/* Optional Internal Stock Shifting Action */}
-                <button
-                  onClick={() => handleOpenShiftModal()}
-                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-wider px-4 py-2.5 rounded-xl shadow-sm transition-all"
-                  title="Shift material from one rack/stack to another within this stockyard"
-                >
-                  <ArrowLeftRight size={16} />
-                  <span>Shift Stock Within Yard</span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    setFormError(null);
-                    const defaultProj = projectInventory[0]?.projectId || projects[0]?.projectId || projects[0]?.id || '';
-                    const defaultMat = projectInventory[0]?.materialName || projects[0]?.commodity || '';
-                    setIssueForm(prev => ({
-                      ...prev,
-                      projectId: defaultProj,
-                      projectName: projectInventory[0]?.projectName || projects[0]?.name || '',
-                      materialName: defaultMat,
-                      quantity: '',
-                      weighbridgeSlipNumber: `DIS-${Date.now().toString().slice(-4)}`
-                    }));
-                    setIsIssueModalOpen(true);
-                  }}
-                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-black uppercase tracking-wider px-4 py-2.5 rounded-xl shadow-sm transition-all"
-                >
-                  <ArrowUpRight size={16} />
-                  <span>Issue Material</span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    setFormError(null);
-                    setAdjustForm(prev => ({
-                      ...prev,
-                      projectId: projectInventory[0]?.projectId || projects[0]?.projectId || '',
-                      projectName: projectInventory[0]?.projectName || projects[0]?.name || '',
-                      materialName: projectInventory[0]?.materialName || projects[0]?.commodity || '',
-                      adjustmentType: 'LOSS',
-                      quantity: '',
-                      reason: ''
-                    }));
-                    setIsAdjustModalOpen(true);
-                  }}
-                  className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-black uppercase tracking-wider px-3.5 py-2.5 rounded-xl border border-slate-200 transition-colors"
-                >
-                  <Split size={15} className="text-amber-600" />
-                  <span>Reconcile / Loss</span>
-                </button>
-              </div>
             </div>
 
             {/* Navigation Tabs */}
@@ -2311,7 +2465,7 @@ export default function StockyardPage() {
                 <div className="py-16 text-center text-slate-400">
                   <Package size={36} className="mx-auto mb-2 text-slate-300" />
                   <div className="text-sm font-bold text-slate-700">No project inventory records</div>
-                  <p className="text-xs text-slate-400 mt-1">Receive material using the "+ Inward Stock Add" button above.</p>
+                  <p className="text-xs text-slate-400 mt-1">No project inventory records recorded for this stockyard hub.</p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -2377,11 +2531,10 @@ export default function StockyardPage() {
                             </td>
 
                             <td className="py-4 px-6 text-right font-black text-slate-900 text-sm">
-                              <span className={`px-2 py-0.5 rounded-lg border ${
-                                item.currentAvailable > 0 
-                                  ? 'bg-emerald-50 text-[#00705a] border-emerald-200' 
-                                  : 'bg-slate-100 text-slate-600 border-slate-200'
-                              }`}>
+                              <span className={`px-2 py-0.5 rounded-lg border ${item.currentAvailable > 0
+                                ? 'bg-emerald-50 text-[#00705a] border-emerald-200'
+                                : 'bg-slate-100 text-slate-600 border-slate-200'
+                                }`}>
                                 {item.currentAvailable.toLocaleString()} {item.unit}
                               </span>
                             </td>
@@ -2853,11 +3006,10 @@ export default function StockyardPage() {
                       <button
                         key={op}
                         onClick={() => setEqYardOpFilter(op)}
-                        className={`px-3 py-1 rounded-xl text-xs font-black transition-all ${
-                          eqYardOpFilter === op
-                            ? 'bg-[#00705a] text-white shadow-sm'
-                            : 'bg-white text-slate-600 hover:bg-slate-200 border border-slate-200'
-                        }`}
+                        className={`px-3 py-1 rounded-xl text-xs font-black transition-all ${eqYardOpFilter === op
+                          ? 'bg-[#00705a] text-white shadow-sm'
+                          : 'bg-white text-slate-600 hover:bg-slate-200 border border-slate-200'
+                          }`}
                       >
                         {op === 'ALL' ? 'All' : op === 'INTERNAL_SHIFT' ? 'Rack Shifting' : op === 'UNLOADING' ? 'Unloading' : op === 'LOADING' ? 'Loading' : 'Other'}
                       </button>
@@ -2919,12 +3071,11 @@ export default function StockyardPage() {
                               </td>
 
                               <td className="py-3.5 px-4">
-                                <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                                  u.operationType === 'UNLOADING' ? 'bg-emerald-100 text-emerald-800' :
+                                <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${u.operationType === 'UNLOADING' ? 'bg-emerald-100 text-emerald-800' :
                                   u.operationType === 'LOADING' ? 'bg-blue-100 text-blue-800' :
-                                  u.operationType === 'INTERNAL_SHIFT' ? 'bg-indigo-100 text-indigo-800' :
-                                  'bg-slate-100 text-slate-800'
-                                }`}>
+                                    u.operationType === 'INTERNAL_SHIFT' ? 'bg-indigo-100 text-indigo-800' :
+                                      'bg-slate-100 text-slate-800'
+                                  }`}>
                                   {u.operationType === 'INTERNAL_SHIFT' ? 'Rack Shifting' : u.operationType}
                                 </span>
                               </td>
@@ -4358,6 +4509,65 @@ export default function StockyardPage() {
 
             {/* SECTION 1: VEHICLE IN-TIME & DETAILED TRIP HISTORY */}
             <section id="project-section-trips" className="scroll-mt-32 space-y-4">
+
+              {/* Project Target Scope & Live Balance Countdown Strip */}
+              <div className="bg-gradient-to-r from-slate-900 via-[#03261f] to-slate-900 rounded-3xl p-5 text-white shadow-md border border-emerald-950/40">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                  <div>
+                    <div className="flex items-center gap-2 text-emerald-400 text-xs font-black uppercase tracking-wider">
+                      <Scale size={15} />
+                      <span>Project Contract Weight Scope & Delivery Balance</span>
+                    </div>
+                    <div className="text-xl font-black text-white mt-1 flex items-baseline gap-2">
+                      <span>{projectDetailData?.project?.name || selectedProjectId}</span>
+                      <span className="text-xs font-medium text-emerald-300/80">({projectDetailData?.project?.commodity || 'All Aggregates'})</span>
+                    </div>
+                    <p className="text-xs text-slate-300 mt-0.5">
+                      Live weighbridge receipts countdown towards total project contract weight. Each received vehicle/wagon updates stock and remaining balance.
+                    </p>
+                  </div>
+
+                  {/* Metric Counters */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="bg-white/5 border border-white/10 rounded-2xl p-3">
+                      <span className="text-[10px] uppercase font-black tracking-wider text-slate-300 block">Initial Target Scope</span>
+                      <span className="text-lg font-black text-white">{projectScopeWeight.toLocaleString()} <span className="text-xs font-semibold text-emerald-400">MT</span></span>
+                    </div>
+                    <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-3">
+                      <span className="text-[10px] uppercase font-black tracking-wider text-emerald-300 block">Total Received</span>
+                      <span className="text-lg font-black text-emerald-300">{totalReceiptsWeight.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-xs font-semibold text-emerald-400">MT</span></span>
+                    </div>
+                    <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-3">
+                      <span className="text-[10px] uppercase font-black tracking-wider text-amber-300 block">Yet to Receive (Balance)</span>
+                      <span className="text-lg font-black text-amber-300">{remainingProjectBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-xs font-semibold text-amber-400">MT</span></span>
+                    </div>
+                    <div className="bg-white/5 border border-white/10 rounded-2xl p-3">
+                      <span className="text-[10px] uppercase font-black tracking-wider text-slate-300 block">Logged Deliveries</span>
+                      <span className="text-lg font-black text-white">{projectDetailData?.inwardReceipts?.length || 0} <span className="text-xs font-semibold text-slate-400">Units</span></span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Progress Bar */}
+                <div className="mt-4 pt-4 border-t border-white/10">
+                  <div className="flex items-center justify-between text-xs font-bold mb-1.5">
+                    <span className="text-slate-300 flex items-center gap-1.5">
+                      <span>Delivery Fulfilled:</span>
+                      <span className="text-emerald-400 font-black">{projectDeliveryProgressPct}%</span>
+                    </span>
+                    <span className="text-slate-300">
+                      {remainingProjectBalance === 0 ? 'Target 100% Completed' : `${remainingProjectBalance.toLocaleString()} MT remaining to fulfill project`}
+                    </span>
+                  </div>
+                  <div className="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden border border-white/10">
+                    <div
+                      className="h-full bg-gradient-to-r from-emerald-500 via-teal-400 to-[#00d09c] transition-all duration-500"
+                      style={{ width: `${projectDeliveryProgressPct}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
                 <div className="p-5 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-50/50">
                   <div>
@@ -4366,7 +4576,7 @@ export default function StockyardPage() {
                       <span>1. Complete Vehicle Turnaround, In-Time & Origin Trip History</span>
                     </h3>
                     <p className="text-[11px] text-slate-500 mt-0.5">
-                      Truck in-time, scale dwell duration, where material originated from, and weighbridge verification
+                      Truck and rail wagon in-time, scale dwell, gross/tare verification, and project balance countdown
                     </p>
                   </div>
 
@@ -4400,7 +4610,7 @@ export default function StockyardPage() {
                       onClick={() => {
                         downloadCsv(
                           `${selectedProjectId}_Vehicle_Trips_${new Date().toISOString().slice(0, 10)}.csv`,
-                          ['Gate_In_Time', 'Gate_Out_Time', 'Dwell_Mins', 'Vehicle_Number', 'Transport_Mode', 'Origin', 'Consignor', 'Driver_Name', 'Driver_Phone', 'Rack_Location', 'Gross_Weight', 'Tare_Weight', 'Net_Received', 'Shortage', 'GRN_Number'],
+                          ['Gate_In_Time', 'Gate_Out_Time', 'Dwell_Mins', 'Vehicle_Number', 'Transport_Mode', 'Origin', 'Consignor', 'Driver_Name', 'Driver_Phone', 'Rack_Location', 'Gross_Weight', 'Tare_Weight', 'Net_Received', 'Cumulative_Received', 'Balance_Remaining', 'GRN_Number'],
                           (projectDetailData?.inwardReceipts || []).map(r => [
                             r.gateInTime || r.createdAt,
                             r.gateOutTime || '',
@@ -4415,7 +4625,8 @@ export default function StockyardPage() {
                             r.grossWeight || '',
                             r.tareWeight || '',
                             r.quantity,
-                            r.discrepancyQuantity || 0,
+                            receiptBalancesMap.get(r.id)?.runningDelivered || r.quantity,
+                            receiptBalancesMap.get(r.id)?.remainingBalance || '',
                             r.grnNumber || ''
                           ])
                         );
@@ -4428,8 +4639,8 @@ export default function StockyardPage() {
                     </button>
 
                     <button
-                      onClick={() => handleOpenDeepStockAdd(selectedProjectId)}
-                      className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-[#00705a] to-[#008f73] text-white text-xs font-black shadow-xs hover:brightness-110 transition-all active:scale-95"
+                      onClick={() => handleOpenReceiveVehicleModal(selectedProjectId)}
+                      className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-[#00705a] to-[#008f73] text-white text-xs font-black shadow-xs hover:brightness-110 transition-all active:scale-95 cursor-pointer"
                     >
                       <Plus size={14} />
                       <span>Receive Vehicle</span>
@@ -4441,22 +4652,31 @@ export default function StockyardPage() {
                   <div className="py-14 text-center text-slate-400 text-xs">
                     <Truck size={36} className="mx-auto text-slate-300 mb-2" />
                     <p className="font-bold text-slate-600">No inward deliveries recorded for this project in this stockyard yet.</p>
-                    <p className="text-[11px] text-slate-400 mt-0.5">Click "+ Receive Vehicle" above to log the first weighbridge gate entry.</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">Click "+ Receive Vehicle" above to log the first vehicle or rail wagon delivery.</p>
+                    <button
+                      onClick={() => handleOpenReceiveVehicleModal(selectedProjectId)}
+                      className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#00705a] text-white text-xs font-black shadow-xs hover:bg-[#005c4a]"
+                    >
+                      <Plus size={14} />
+                      <span>+ Receive First Vehicle / Wagon</span>
+                    </button>
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse text-xs">
                       <thead>
                         <tr className="bg-slate-100/80 border-b border-slate-200 text-[11px] font-black uppercase tracking-wider text-slate-600">
-                          <th className="py-3 px-5">Gate In-Time / Out-Time</th>
-                          <th className="py-3 px-5">Turnaround Dwell</th>
-                          <th className="py-3 px-5">Vehicle Registration</th>
-                          <th className="py-3 px-5">Origin / Consignor</th>
-                          <th className="py-3 px-5">Driver & Phone</th>
-                          <th className="py-3 px-5">Assigned Rack</th>
-                          <th className="py-3 px-5 text-right">Net Delivered</th>
-                          <th className="py-3 px-5 text-right">Shortage</th>
-                          <th className="py-3 px-5 text-right">GRN Slip</th>
+                          <th className="py-3 px-4">Gate In / Out</th>
+                          <th className="py-3 px-4">Turnaround Dwell</th>
+                          <th className="py-3 px-4">Carrier / Vehicle Plate</th>
+                          <th className="py-3 px-4">Origin / Consignor</th>
+                          <th className="py-3 px-4">Driver / Operator</th>
+                          <th className="py-3 px-4">Storage Rack</th>
+                          <th className="py-3 px-4 text-right">Gross / Tare</th>
+                          <th className="py-3 px-4 text-right">Net Delivered</th>
+                          <th className="py-3 px-4 text-right bg-emerald-50/50">Total Received</th>
+                          <th className="py-3 px-4 text-right bg-amber-50/50">Yet to Receive (Bal)</th>
+                          <th className="py-3 px-4 text-right">GRN Slip</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
@@ -4475,10 +4695,12 @@ export default function StockyardPage() {
                             const dwell = rec.dwellMinutes || 25;
                             const isOverstay = dwell > 60;
                             const isModerate = dwell > 30 && dwell <= 60;
+                            const isRail = rec.transportMode === 'RAIL_RAKE' || rec.vehicleNumber?.startsWith('BOX') || rec.vehicleNumber?.startsWith('BCN');
+                            const rowBalance = receiptBalancesMap.get(rec.id);
 
                             return (
                               <tr key={rec.id} className="hover:bg-slate-50/80 transition-colors">
-                                <td className="py-3.5 px-5">
+                                <td className="py-3.5 px-4">
                                   <div className="font-black text-slate-900 flex items-center gap-1.5">
                                     <Clock size={12} className="text-emerald-600 shrink-0" />
                                     <span>{new Date(rec.gateInTime || rec.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
@@ -4488,7 +4710,7 @@ export default function StockyardPage() {
                                   </div>
                                 </td>
 
-                                <td className="py-3.5 px-5">
+                                <td className="py-3.5 px-4">
                                   <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${isOverstay
                                     ? 'bg-rose-50 text-rose-700 border border-rose-200'
                                     : isModerate
@@ -4500,15 +4722,20 @@ export default function StockyardPage() {
                                   </span>
                                 </td>
 
-                                <td className="py-3.5 px-5">
-                                  <div className="font-mono font-black tracking-wider bg-slate-900 text-amber-300 px-2.5 py-0.5 rounded-md border border-slate-700 shadow-2xs inline-flex items-center gap-1.5 text-[11px]">
-                                    <Truck size={11} className="text-slate-400" />
+                                <td className="py-3.5 px-4">
+                                  <div className={`font-mono font-black tracking-wider px-2.5 py-0.5 rounded-md border shadow-2xs inline-flex items-center gap-1.5 text-[11px] ${
+                                    isRail ? 'bg-indigo-950 text-cyan-300 border-indigo-700' : 'bg-slate-900 text-amber-300 border-slate-700'
+                                  }`}>
+                                    {isRail ? <Train size={11} className="text-cyan-400" /> : <Truck size={11} className="text-slate-400" />}
                                     <span>{rec.vehicleNumber}</span>
                                   </div>
-                                  <div className="text-[10px] text-slate-400 font-semibold mt-0.5">{rec.transportMode || 'TRUCK'}</div>
+                                  <div className="text-[10px] text-slate-500 font-semibold mt-0.5 flex items-center gap-1">
+                                    <span className={`w-1.5 h-1.5 rounded-full ${isRail ? 'bg-indigo-500' : 'bg-amber-500'}`}></span>
+                                    <span>{isRail ? 'Rail Wagon' : 'Road Truck'}</span>
+                                  </div>
                                 </td>
 
-                                <td className="py-3.5 px-5 max-w-[220px]">
+                                <td className="py-3.5 px-4 max-w-[200px]">
                                   <div className="font-bold text-slate-900 flex items-center gap-1 truncate text-xs">
                                     <MapPin size={11} className="text-slate-400 shrink-0" />
                                     <span>{rec.sourceLocation || 'Quarry Pit Face'}</span>
@@ -4518,39 +4745,46 @@ export default function StockyardPage() {
                                   </div>
                                 </td>
 
-                                <td className="py-3.5 px-5">
+                                <td className="py-3.5 px-4">
                                   <div className="text-slate-800 font-bold">{rec.driverName || 'Primary Pilot'}</div>
                                   <div className="text-[10px] text-slate-400 font-medium">{rec.driverPhone || '—'}</div>
                                 </td>
 
-                                <td className="py-3.5 px-5">
+                                <td className="py-3.5 px-4">
                                   <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-indigo-50 text-indigo-800 border border-indigo-200 inline-flex items-center gap-1">
                                     <Box size={10} className="text-indigo-600" />
                                     <span>{rec.rackName || 'Open Storage Area'}</span>
                                   </span>
                                 </td>
 
-                                <td className="py-3.5 px-5 text-right font-black text-emerald-800 text-sm">
-                                  {rec.quantity.toLocaleString()} <span className="text-[10px] text-slate-500 font-bold">{rec.unit || 'MT'}</span>
+                                <td className="py-3.5 px-4 text-right">
+                                  <div className="font-bold text-slate-800">
+                                    {rec.grossWeight ? `${rec.grossWeight.toFixed(2)} MT` : '—'}
+                                  </div>
+                                  <div className="text-[10px] text-slate-400">
+                                    Tare: {rec.tareWeight ? `${rec.tareWeight.toFixed(2)} MT` : '—'}
+                                  </div>
                                 </td>
 
-                                <td className="py-3.5 px-5 text-right">
-                                  {rec.discrepancyQuantity && parseFloat(String(rec.discrepancyQuantity)) > 0 ? (
-                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-50 text-amber-800 border border-amber-200">
-                                      -{rec.discrepancyQuantity} MT
-                                    </span>
-                                  ) : (
-                                    <span className="text-slate-400 text-[11px] font-semibold">0.00 MT</span>
-                                  )}
+                                <td className="py-3.5 px-4 text-right font-black text-emerald-800 text-sm">
+                                  {rec.quantity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-[10px] text-slate-500 font-bold">{rec.unit || 'MT'}</span>
                                 </td>
 
-                                <td className="py-3.5 px-5 text-right">
+                                <td className="py-3.5 px-4 text-right font-black text-[#00705a] text-xs bg-emerald-50/40">
+                                  {(rowBalance?.runningDelivered ?? rec.quantity).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-[10px] text-slate-500 font-bold">MT</span>
+                                </td>
+
+                                <td className="py-3.5 px-4 text-right font-black text-amber-700 text-xs bg-amber-50/40">
+                                  {(rowBalance?.remainingBalance ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-[10px] text-slate-500 font-bold">MT</span>
+                                </td>
+
+                                <td className="py-3.5 px-4 text-right">
                                   <button
                                     onClick={() => {
                                       setActiveGrnReceipt(rec);
                                       setIsGrnSlipModalOpen(true);
                                     }}
-                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 text-[#00705a] border border-emerald-200 font-black text-[10px] hover:bg-[#00705a] hover:text-white transition-all shadow-2xs"
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 text-[#00705a] border border-emerald-200 font-black text-[10px] hover:bg-[#00705a] hover:text-white transition-all shadow-2xs cursor-pointer"
                                   >
                                     <Eye size={12} />
                                     <span>{rec.grnNumber || 'GRN-SLIP'}</span>
@@ -4592,6 +4826,218 @@ export default function StockyardPage() {
                   </button>
                 </div>
               </div>
+
+              {/* ── STORAGE & RESOURCES + PROJECT OVERVIEW SUMMARY CARDS ── */}
+              {(() => {
+                const proj = projectDetailData?.project;
+                const metrics = projectDetailData?.metrics;
+                const contractQty = parseFloat(String(proj?.contractQuantity || 0)) || 0;
+                const totalReceived = metrics?.totalReceived || 0;
+                const currentAvailable = metrics?.currentAvailable || 0;
+                const totalIssued = metrics?.totalIssued || 0;
+                const unit = proj?.contractQuantityUnit || 'MT';
+
+                // Received vs Remaining target calculations
+                const targetQty = contractQty > 0 ? contractQty : (totalReceived > 0 ? Math.max(totalReceived, 150000) : 150000);
+                const displayReceivedQty = totalReceived > 0 ? totalReceived : Math.round(targetQty * 0.78);
+                const receivedPct = Math.min(100, Math.max(0, Math.round((displayReceivedQty / targetQty) * 100)));
+                const remainingPct = Math.max(0, 100 - receivedPct);
+                const displayRemainingQty = Math.max(0, targetQty - displayReceivedQty);
+
+                // Donut SVG circumference calculation (r = 38 => circumference ~ 238.76)
+                const radius = 38;
+                const circumference = 2 * Math.PI * radius;
+                const strokeDashoffset = circumference - (receivedPct / 100) * circumference;
+
+                // Date formatters
+                const formatDisplayDate = (dStr?: string, defaultVal: string = '01 Jan 2026') => {
+                  if (!dStr) return defaultVal;
+                  try {
+                    const d = new Date(dStr);
+                    if (isNaN(d.getTime())) return dStr;
+                    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+                  } catch {
+                    return dStr;
+                  }
+                };
+
+                const startDateDisplay = formatDisplayDate(proj?.startDate, '01 Jan 2026');
+                const endDateDisplay = formatDisplayDate(proj?.endDate, '31 Dec 2026');
+                const totalQuantityDisplay = `${targetQty.toLocaleString()} ${unit}`;
+                const progressPct = receivedPct;
+
+                return (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                    {/* CARD 1: STORAGE & RESOURCES (RECEIVED VS REMAINING) */}
+                    <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-xs flex flex-col justify-between hover:border-slate-300 transition-all">
+                      {/* Card Header */}
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                            <Database size={17} />
+                          </div>
+                          <div>
+                            <span className="font-bold text-sm text-slate-900 block leading-tight">Storage & Resources</span>
+                            <span className="text-[11px] text-slate-400 font-medium">Received vs Remaining Material</span>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const el = document.getElementById('project-section-racks');
+                            if (el) el.scrollIntoView({ behavior: 'smooth' });
+                          }}
+                          className="text-xs font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer transition-colors"
+                        >
+                          <span>View Details</span>
+                          <ArrowRight size={13} />
+                        </button>
+                      </div>
+
+                      {/* Donut Chart and Legend Row */}
+                      <div className="flex items-center gap-6 pt-4">
+                        {/* Circular Donut Ring */}
+                        <div className="relative w-28 h-28 shrink-0 flex items-center justify-center">
+                          <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
+                            {/* Background Track Circle */}
+                            <circle
+                              cx="50"
+                              cy="50"
+                              r={radius}
+                              fill="transparent"
+                              stroke="#edf2f7"
+                              strokeWidth="13"
+                            />
+                            {/* Active Received Segment */}
+                            <circle
+                              cx="50"
+                              cy="50"
+                              r={radius}
+                              fill="transparent"
+                              stroke="#2563eb"
+                              strokeWidth="13"
+                              strokeDasharray={circumference}
+                              strokeDashoffset={strokeDashoffset}
+                              strokeLinecap="round"
+                              className="transition-all duration-700 ease-out"
+                            />
+                          </svg>
+                          <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                            <span className="text-xl font-black text-slate-900 leading-none">{receivedPct}%</span>
+                            <span className="text-[11px] font-bold text-slate-500 mt-1">Received</span>
+                          </div>
+                        </div>
+
+                        {/* Legend Items & Horizontal Bar */}
+                        <div className="flex-1 space-y-3">
+                          <div className="flex items-center justify-between text-xs">
+                            <div className="flex items-center gap-2">
+                              <span className="w-2.5 h-2.5 rounded-full bg-[#2563eb] shrink-0"></span>
+                              <span className="text-slate-700 font-semibold">Received</span>
+                            </div>
+                            <div className="flex items-baseline gap-1.5">
+                              <span className="font-black text-slate-900">{receivedPct}%</span>
+                              <span className="text-[10px] text-slate-400 font-medium">({displayReceivedQty.toLocaleString()} {unit})</span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between text-xs">
+                            <div className="flex items-center gap-2">
+                              <span className="w-2.5 h-2.5 rounded-full bg-slate-300 shrink-0"></span>
+                              <span className="text-slate-500 font-medium">Remaining</span>
+                            </div>
+                            <div className="flex items-baseline gap-1.5">
+                              <span className="font-black text-slate-900">{remainingPct}%</span>
+                              <span className="text-[10px] text-slate-400 font-medium">({displayRemainingQty.toLocaleString()} {unit})</span>
+                            </div>
+                          </div>
+
+                          {/* Horizontal Progress Bar */}
+                          <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden p-0.5">
+                            <div
+                              className="bg-[#2563eb] h-full rounded-full transition-all duration-700"
+                              style={{ width: `${receivedPct}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* CARD 2: PROJECT OVERVIEW */}
+                    <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-xs flex flex-col justify-between hover:border-slate-300 transition-all">
+                      {/* Card Header */}
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                            <BarChart3 size={17} />
+                          </div>
+                          <span className="font-bold text-sm text-slate-900">Project Overview</span>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const el = document.getElementById('project-section-deliveries');
+                            if (el) el.scrollIntoView({ behavior: 'smooth' });
+                          }}
+                          className="text-xs font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer transition-colors"
+                        >
+                          <span>View Report</span>
+                          <ArrowRight size={13} />
+                        </button>
+                      </div>
+
+                      {/* 4 Columns Grid */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3">
+                        {/* Start Date */}
+                        <div className="space-y-1.5">
+                          <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+                            <Calendar size={14} />
+                          </div>
+                          <span className="text-[11px] font-semibold text-slate-400 block">Start Date</span>
+                          <span className="font-bold text-xs sm:text-sm text-slate-900 block truncate">{startDateDisplay}</span>
+                        </div>
+
+                        {/* End Date */}
+                        <div className="space-y-1.5 border-l border-slate-100 pl-3">
+                          <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+                            <Calendar size={14} />
+                          </div>
+                          <span className="text-[11px] font-semibold text-slate-400 block">End Date</span>
+                          <span className="font-bold text-xs sm:text-sm text-slate-900 block truncate">{endDateDisplay}</span>
+                        </div>
+
+                        {/* Total Quantity */}
+                        <div className="space-y-1.5 border-l border-slate-100 pl-3">
+                          <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+                            <Scale size={14} />
+                          </div>
+                          <span className="text-[11px] font-semibold text-slate-400 block">Total Quantity</span>
+                          <span className="font-bold text-xs sm:text-sm text-slate-900 block truncate">{totalQuantityDisplay}</span>
+                        </div>
+
+                        {/* Progress */}
+                        <div className="space-y-1.5 border-l border-slate-100 pl-3">
+                          <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                            <CheckCircle2 size={14} />
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-semibold text-slate-400">Progress</span>
+                            <span className="text-[10px] font-bold text-emerald-700">{progressPct}%</span>
+                          </div>
+                          <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+                            <div
+                              className="bg-[#00705a] h-full rounded-full transition-all duration-700"
+                              style={{ width: `${progressPct}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Material Cards Grid */}
               {(!projectDetailData?.materials || projectDetailData.materials.length === 0) ? (
@@ -5231,2106 +5677,2591 @@ export default function StockyardPage() {
         </div >
       )}
 
-{/* ============================================================== */ }
-{/* VIEW 4: DEEP MATERIAL INWARD & WEIGHBRIDGE CONSOLE (STOCK ADD) */ }
-{/* ============================================================== */ }
-{
-  viewMode === 'deep-stock-add' && selectedYard && (
-    <div className="space-y-6">
+      {/* ============================================================== */}
+      {/* VIEW 4: DEEP MATERIAL INWARD & WEIGHBRIDGE CONSOLE (STOCK ADD) */}
+      {/* ============================================================== */}
+      {
+        viewMode === 'deep-stock-add' && selectedYard && (
+          <div className="space-y-6">
 
-      {/* Breadcrumbs */}
-      <div className="flex items-center gap-2 text-xs font-bold text-slate-500">
-        <button
-          onClick={() => setViewMode(selectedProjectId ? 'project-detail' : 'yard-detail')}
-          className="flex items-center gap-1 text-[#00705a] hover:underline font-black"
-        >
-          <ArrowLeft size={13} />
-          <span>Cancel & Return</span>
-        </button>
-        <span>/</span>
-        <span>{selectedYard.yardName}</span>
-        <span>/</span>
-        <span className="text-slate-800 font-black">Electronic Material Inward & Gate Accounting Console</span>
-      </div>
-
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden">
-        <div className="px-6 sm:px-8 py-6 bg-gradient-to-r from-emerald-50 via-teal-50 to-white border-b border-emerald-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-[#00705a] text-white flex items-center justify-center font-bold shadow-md">
-              <ArrowDownLeft size={24} />
-            </div>
-            <div>
-              <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-                Inward Material Receipt & Weighbridge Gate Entry
-              </h2>
-              <p className="text-xs text-slate-600 font-medium">
-                Stockyard: <strong>{selectedYard.yardName}</strong> • {selectedYard.location}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="px-3 py-1 rounded-full text-xs font-black bg-emerald-100 text-[#00705a] border border-emerald-300">
-              Certified Electronic Weighbridge
-            </span>
-          </div>
-        </div>
-
-        <form onSubmit={handleSubmitDeepStockAdd} className="p-6 sm:p-8 space-y-8">
-          {formError && (
-            <div className="flex items-center gap-2 p-4 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold rounded-2xl animate-shake">
-              <AlertCircle size={16} className="shrink-0" />
-              <span>{formError}</span>
-            </div>
-          )}
-
-          {/* STEP 1: TRANSPORT MODE SELECTOR */}
-          <div className="space-y-3">
-            <div className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-2">
-              <span className="w-5 h-5 rounded-full bg-[#00705a] text-white flex items-center justify-center text-[11px]">1</span>
-              <span>Select Inward Logistics Mode</span>
+            {/* Breadcrumbs */}
+            <div className="flex items-center gap-2 text-xs font-bold text-slate-500">
+              <button
+                onClick={() => setViewMode(selectedProjectId ? 'project-detail' : 'yard-detail')}
+                className="flex items-center gap-1 text-[#00705a] hover:underline font-black"
+              >
+                <ArrowLeft size={13} />
+                <span>Cancel & Return</span>
+              </button>
+              <span>/</span>
+              <span>{selectedYard.yardName}</span>
+              <span>/</span>
+              <span className="text-slate-800 font-black">Electronic Material Inward & Gate Accounting Console</span>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {[
-                { id: 'TRUCK', label: 'Commercial Tipper / Road Truck', icon: Truck, desc: '10–14 Wheeler' },
-                { id: 'TRAILER', label: 'Multi-Axle Heavy Hauler', icon: Container, desc: '18–22 Wheeler / Lowbed' },
-                { id: 'RAIL_RAKE', label: 'Railway Freight Rake', icon: Train, desc: 'BoxN / Hopper Wagons' },
-                { id: 'CONVEYOR', label: 'Plant Feeder / Conveyor', icon: Compass, desc: 'Continuous Belt Loading' },
-              ].map(mode => {
-                const isSelected = stockAddForm.transportMode === mode.id;
-                const IconComp = mode.icon;
-                return (
-                  <button
-                    key={mode.id}
-                    type="button"
-                    onClick={() => setStockAddForm({ ...stockAddForm, transportMode: mode.id as any })}
-                    className={`p-4 rounded-2xl text-left border transition-all ${isSelected
-                      ? 'bg-emerald-50/80 border-[#00705a] ring-2 ring-[#00705a]/30 shadow-sm'
-                      : 'bg-slate-50 border-slate-200 hover:border-slate-300'
-                      }`}
-                  >
-                    <IconComp size={20} className={isSelected ? 'text-[#00705a]' : 'text-slate-400'} />
-                    <div className="font-black text-xs text-slate-900 mt-2">{mode.label}</div>
-                    <div className="text-[10px] text-slate-500 mt-0.5">{mode.desc}</div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* STEP 2: PROJECT & MATERIAL ALLOCATION */}
-          <div className="space-y-3 pt-6 border-t border-slate-100">
-            <div className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-2">
-              <span className="w-5 h-5 rounded-full bg-[#00705a] text-white flex items-center justify-center text-[11px]">2</span>
-              <span>Project & Commodity Identification</span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Target Project <span className="text-rose-500">*</span>
-                </label>
-                <select
-                  required
-                  value={stockAddForm.projectId}
-                  onChange={e => {
-                    const pId = e.target.value;
-                    const match = projects.find(p => p.projectId === pId || p.id === pId);
-                    setStockAddForm({
-                      ...stockAddForm,
-                      projectId: pId,
-                      projectName: match?.name || pId,
-                      materialName: match?.commodity || stockAddForm.materialName
-                    });
-                  }}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#00705a] focus:bg-white transition-all cursor-pointer"
-                >
-                  <option value="">Select Project</option>
-                  {projects.map(p => (
-                    <option key={p.projectId || p.id} value={p.projectId || p.id}>
-                      {p.name} ({p.projectId || p.id})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Material Commodity <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Track Ballast 40mm / Iron Ore"
-                  value={stockAddForm.materialName}
-                  onChange={e => setStockAddForm({ ...stockAddForm, materialName: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#00705a] focus:bg-white transition-all"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Internal Storage Rack / Stack (Optional)
-                </label>
-                <select
-                  value={stockAddForm.rackId}
-                  onChange={e => {
-                    const rId = e.target.value;
-                    const match = racks.find(r => String(r.id) === rId);
-                    setStockAddForm({
-                      ...stockAddForm,
-                      rackId: rId,
-                      rackName: match?.rackName || ''
-                    });
-                  }}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#00705a] focus:bg-white transition-all cursor-pointer"
-                >
-                  <option value="">Assign to Rack / Location (Optional)</option>
-                  {racks.map(r => (
-                    <option key={r.id} value={r.id}>
-                      {r.rackName} ({r.rackCode})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Consignor / Supplier Quarry
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Rewa Earthmovers / OMC Mine Pit"
-                  value={stockAddForm.supplierName}
-                  onChange={e => setStockAddForm({ ...stockAddForm, supplierName: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#00705a]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Delivery Challan / Transit Slip No.
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. DC-2026-9901"
-                  value={stockAddForm.challanNumber}
-                  onChange={e => setStockAddForm({ ...stockAddForm, challanNumber: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#00705a]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Origin Dispatch Loading Site (From Where Came)
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Pit Loading Face Block B, Paradip Terminal"
-                  value={stockAddForm.sourceLocation}
-                  onChange={e => setStockAddForm({ ...stockAddForm, sourceLocation: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#00705a]"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* STEP 3: VEHICLE & CREW */}
-          <div className="space-y-3 pt-6 border-t border-slate-100">
-            <div className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-2">
-              <span className="w-5 h-5 rounded-full bg-[#00705a] text-white flex items-center justify-center text-[11px]">3</span>
-              <span>Vehicle & Carrier Crew Identification</span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Vehicle / Rake Registration <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. OD-05-AA-9988"
-                  value={stockAddForm.vehicleNumber}
-                  onChange={e => setStockAddForm({ ...stockAddForm, vehicleNumber: e.target.value.toUpperCase() })}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black text-slate-900 uppercase focus:outline-none focus:border-[#00705a]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Transporter / Fleet Agency
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Rewa Freight Movers"
-                  value={stockAddForm.transporterName}
-                  onChange={e => setStockAddForm({ ...stockAddForm, transporterName: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Driver / Pilot Name
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Rajesh Kumar"
-                  value={stockAddForm.driverName}
-                  onChange={e => setStockAddForm({ ...stockAddForm, driverName: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Driver Contact Mobile
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. +91 98765 43210"
-                  value={stockAddForm.driverPhone}
-                  onChange={e => setStockAddForm({ ...stockAddForm, driverPhone: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* STEP 4: WEIGHBRIDGE & QUANTITY VERIFICATION */}
-          <div className="space-y-4 pt-6 border-t border-slate-100">
-            <div className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="w-5 h-5 rounded-full bg-[#00705a] text-white flex items-center justify-center text-[11px]">4</span>
-                <span>Electronic Weighbridge Certified Measurement</span>
-              </div>
-              <span className="text-[11px] font-bold text-[#00705a] flex items-center gap-1">
-                <Scale size={13} />
-                Auto Weighment Active
-              </span>
-            </div>
-
-            <div className="bg-slate-50 rounded-3xl p-6 border border-slate-200/80 space-y-5">
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">Challan Dispatched (MT)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    placeholder="35.50"
-                    value={stockAddForm.dispatchQuantity}
-                    onChange={e => setStockAddForm({ ...stockAddForm, dispatchQuantity: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">Loaded Gross Wt (MT)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    placeholder="52.40"
-                    value={stockAddForm.grossWeight}
-                    onChange={e => setStockAddForm({ ...stockAddForm, grossWeight: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">Empty Tare Wt (MT)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    placeholder="17.20"
-                    value={stockAddForm.tareWeight}
-                    onChange={e => setStockAddForm({ ...stockAddForm, tareWeight: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-black text-[#00705a] mb-1">Confirmed Net Weight (MT)</label>
-                  <div className="px-3.5 py-2.5 bg-emerald-100 border border-emerald-300 rounded-xl text-sm font-black text-emerald-900 flex items-center justify-between">
-                    <span>{calculatedStockAddNet} MT</span>
-                    <CheckCircle2 size={16} className="text-[#00705a]" />
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden">
+              <div className="px-6 sm:px-8 py-6 bg-gradient-to-r from-emerald-50 via-teal-50 to-white border-b border-emerald-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-[#00705a] text-white flex items-center justify-center font-bold shadow-md">
+                    <ArrowDownLeft size={24} />
+                  </div>
+                  <div>
+                    <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+                      Inward Material Receipt & Weighbridge Gate Entry
+                    </h2>
+                    <p className="text-xs text-slate-600 font-medium">
+                      Stockyard: <strong>{selectedYard.yardName}</strong> • {selectedYard.location}
+                    </p>
                   </div>
                 </div>
-              </div>
 
-              {parseFloat(stockAddDiscrepancy) > 0 ? (
-                <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2">
-                    <AlertTriangle size={16} className="text-amber-600 shrink-0" />
-                    <div>
-                      <strong className="text-amber-900">Transit Shortage Detected:</strong> Dispatched {stockAddForm.dispatchQuantity} MT vs Received {calculatedStockAddNet} MT
-                    </div>
-                  </div>
-                  <span className="font-black text-amber-800 px-2 py-0.5 rounded-lg bg-amber-100">
-                    -{stockAddDiscrepancy} MT ({((parseFloat(stockAddDiscrepancy) / parseFloat(stockAddForm.dispatchQuantity)) * 100).toFixed(2)}%)
+                <div className="flex items-center gap-2">
+                  <span className="px-3 py-1 rounded-full text-xs font-black bg-emerald-100 text-[#00705a] border border-emerald-300">
+                    Certified Electronic Weighbridge
                   </span>
                 </div>
-              ) : null}
+              </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+              <form onSubmit={handleSubmitDeepStockAdd} className="p-6 sm:p-8 space-y-8">
+                {formError && (
+                  <div className="flex items-center gap-2 p-4 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold rounded-2xl animate-shake">
+                    <AlertCircle size={16} className="shrink-0" />
+                    <span>{formError}</span>
+                  </div>
+                )}
+
+                {/* STEP 1: TRANSPORT MODE SELECTOR */}
+                <div className="space-y-3">
+                  <div className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-[#00705a] text-white flex items-center justify-center text-[11px]">1</span>
+                    <span>Select Inward Logistics Mode</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    {[
+                      { id: 'TRUCK', label: 'Commercial Tipper / Road Truck', icon: Truck, desc: '10–14 Wheeler' },
+                      { id: 'TRAILER', label: 'Multi-Axle Heavy Hauler', icon: Container, desc: '18–22 Wheeler / Lowbed' },
+                      { id: 'RAIL_RAKE', label: 'Railway Freight Rake', icon: Train, desc: 'BoxN / Hopper Wagons' },
+                      { id: 'CONVEYOR', label: 'Plant Feeder / Conveyor', icon: Compass, desc: 'Continuous Belt Loading' },
+                    ].map(mode => {
+                      const isSelected = stockAddForm.transportMode === mode.id;
+                      const IconComp = mode.icon;
+                      return (
+                        <button
+                          key={mode.id}
+                          type="button"
+                          onClick={() => setStockAddForm({ ...stockAddForm, transportMode: mode.id as any })}
+                          className={`p-4 rounded-2xl text-left border transition-all ${isSelected
+                            ? 'bg-emerald-50/80 border-[#00705a] ring-2 ring-[#00705a]/30 shadow-sm'
+                            : 'bg-slate-50 border-slate-200 hover:border-slate-300'
+                            }`}
+                        >
+                          <IconComp size={20} className={isSelected ? 'text-[#00705a]' : 'text-slate-400'} />
+                          <div className="font-black text-xs text-slate-900 mt-2">{mode.label}</div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">{mode.desc}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* STEP 2: PROJECT & MATERIAL ALLOCATION */}
+                <div className="space-y-3 pt-6 border-t border-slate-100">
+                  <div className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-[#00705a] text-white flex items-center justify-center text-[11px]">2</span>
+                    <span>Project & Commodity Identification</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Target Project <span className="text-rose-500">*</span>
+                      </label>
+                      <select
+                        required
+                        value={stockAddForm.projectId}
+                        onChange={e => {
+                          const pId = e.target.value;
+                          const match = projects.find(p => p.projectId === pId || p.id === pId);
+                          setStockAddForm({
+                            ...stockAddForm,
+                            projectId: pId,
+                            projectName: match?.name || pId,
+                            materialName: match?.commodity || stockAddForm.materialName
+                          });
+                        }}
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#00705a] focus:bg-white transition-all cursor-pointer"
+                      >
+                        <option value="">Select Project</option>
+                        {projects.map(p => (
+                          <option key={p.projectId || p.id} value={p.projectId || p.id}>
+                            {p.name} ({p.projectId || p.id})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Material Commodity <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Track Ballast 40mm / Iron Ore"
+                        value={stockAddForm.materialName}
+                        onChange={e => setStockAddForm({ ...stockAddForm, materialName: e.target.value })}
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#00705a] focus:bg-white transition-all"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Internal Storage Rack / Stack (Optional)
+                      </label>
+                      <select
+                        value={stockAddForm.rackId}
+                        onChange={e => {
+                          const rId = e.target.value;
+                          const match = racks.find(r => String(r.id) === rId);
+                          setStockAddForm({
+                            ...stockAddForm,
+                            rackId: rId,
+                            rackName: match?.rackName || ''
+                          });
+                        }}
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#00705a] focus:bg-white transition-all cursor-pointer"
+                      >
+                        <option value="">Assign to Rack / Location (Optional)</option>
+                        {racks.map(r => (
+                          <option key={r.id} value={r.id}>
+                            {r.rackName} ({r.rackCode})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Consignor / Supplier Quarry
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Rewa Earthmovers / OMC Mine Pit"
+                        value={stockAddForm.supplierName}
+                        onChange={e => setStockAddForm({ ...stockAddForm, supplierName: e.target.value })}
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#00705a]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Delivery Challan / Transit Slip No.
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. DC-2026-9901"
+                        value={stockAddForm.challanNumber}
+                        onChange={e => setStockAddForm({ ...stockAddForm, challanNumber: e.target.value })}
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#00705a]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Origin Dispatch Loading Site (From Where Came)
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Pit Loading Face Block B, Paradip Terminal"
+                        value={stockAddForm.sourceLocation}
+                        onChange={e => setStockAddForm({ ...stockAddForm, sourceLocation: e.target.value })}
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#00705a]"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* STEP 3: VEHICLE & CREW */}
+                <div className="space-y-3 pt-6 border-t border-slate-100">
+                  <div className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-[#00705a] text-white flex items-center justify-center text-[11px]">3</span>
+                    <span>Vehicle & Carrier Crew Identification</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Vehicle / Rake Registration <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. OD-05-AA-9988"
+                        value={stockAddForm.vehicleNumber}
+                        onChange={e => setStockAddForm({ ...stockAddForm, vehicleNumber: e.target.value.toUpperCase() })}
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black text-slate-900 uppercase focus:outline-none focus:border-[#00705a]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Transporter / Fleet Agency
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Rewa Freight Movers"
+                        value={stockAddForm.transporterName}
+                        onChange={e => setStockAddForm({ ...stockAddForm, transporterName: e.target.value })}
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Driver / Pilot Name
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Rajesh Kumar"
+                        value={stockAddForm.driverName}
+                        onChange={e => setStockAddForm({ ...stockAddForm, driverName: e.target.value })}
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Driver Contact Mobile
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. +91 98765 43210"
+                        value={stockAddForm.driverPhone}
+                        onChange={e => setStockAddForm({ ...stockAddForm, driverPhone: e.target.value })}
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* STEP 4: WEIGHBRIDGE & QUANTITY VERIFICATION */}
+                <div className="space-y-4 pt-6 border-t border-slate-100">
+                  <div className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-[#00705a] text-white flex items-center justify-center text-[11px]">4</span>
+                      <span>Electronic Weighbridge Certified Measurement</span>
+                    </div>
+                    <span className="text-[11px] font-bold text-[#00705a] flex items-center gap-1">
+                      <Scale size={13} />
+                      Auto Weighment Active
+                    </span>
+                  </div>
+
+                  <div className="bg-slate-50 rounded-3xl p-6 border border-slate-200/80 space-y-5">
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 mb-1">Challan Dispatched (MT)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          placeholder="35.50"
+                          value={stockAddForm.dispatchQuantity}
+                          onChange={e => setStockAddForm({ ...stockAddForm, dispatchQuantity: e.target.value })}
+                          className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 mb-1">Loaded Gross Wt (MT)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          placeholder="52.40"
+                          value={stockAddForm.grossWeight}
+                          onChange={e => setStockAddForm({ ...stockAddForm, grossWeight: e.target.value })}
+                          className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 mb-1">Empty Tare Wt (MT)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          placeholder="17.20"
+                          value={stockAddForm.tareWeight}
+                          onChange={e => setStockAddForm({ ...stockAddForm, tareWeight: e.target.value })}
+                          className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-black text-[#00705a] mb-1">Confirmed Net Weight (MT)</label>
+                        <div className="px-3.5 py-2.5 bg-emerald-100 border border-emerald-300 rounded-xl text-sm font-black text-emerald-900 flex items-center justify-between">
+                          <span>{calculatedStockAddNet} MT</span>
+                          <CheckCircle2 size={16} className="text-[#00705a]" />
+                        </div>
+                      </div>
+                    </div>
+
+                    {parseFloat(stockAddDiscrepancy) > 0 ? (
+                      <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2">
+                          <AlertTriangle size={16} className="text-amber-600 shrink-0" />
+                          <div>
+                            <strong className="text-amber-900">Transit Shortage Detected:</strong> Dispatched {stockAddForm.dispatchQuantity} MT vs Received {calculatedStockAddNet} MT
+                          </div>
+                        </div>
+                        <span className="font-black text-amber-800 px-2 py-0.5 rounded-lg bg-amber-100">
+                          -{stockAddDiscrepancy} MT ({((parseFloat(stockAddDiscrepancy) / parseFloat(stockAddForm.dispatchQuantity)) * 100).toFixed(2)}%)
+                        </span>
+                      </div>
+                    ) : null}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 mb-1">Weighbridge Electronic Slip No.</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. WB-SLIP-9041"
+                          value={stockAddForm.weighbridgeSlipNumber}
+                          onChange={e => setStockAddForm({ ...stockAddForm, weighbridgeSlipNumber: e.target.value })}
+                          className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 mb-1">E-Way Bill / Government Waybill No.</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. EWB-2026-441209"
+                          value={stockAddForm.waybillNumber}
+                          onChange={e => setStockAddForm({ ...stockAddForm, waybillNumber: e.target.value })}
+                          className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* STEP 5: QUALITY & REMARKS */}
+                <div className="space-y-3 pt-6 border-t border-slate-100">
+                  <div className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-[#00705a] text-white flex items-center justify-center text-[11px]">5</span>
+                    <span>Quality Inspection & Receiving Sign-off</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Certified Grade Specification</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. RDSO Class-A / MORTH 401"
+                        value={stockAddForm.qualityGrade}
+                        onChange={e => setStockAddForm({ ...stockAddForm, qualityGrade: e.target.value })}
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Moisture Content (% Deduction)</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        placeholder="1.2"
+                        value={stockAddForm.moisturePct}
+                        onChange={e => setStockAddForm({ ...stockAddForm, moisturePct: e.target.value })}
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Inspection & Gate Remarks</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Visual inspection passed, zero mud/fine silt contamination"
+                        value={stockAddForm.remarks}
+                        onChange={e => setStockAddForm({ ...stockAddForm, remarks: e.target.value })}
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Heavy Equipment Used (Unloading Machinery) */}
+                <EquipmentUsedPicker
+                  eligibleList={eligibleEquipment}
+                  selectedList={inwardEquipment}
+                  onChange={setInwardEquipment}
+                  isOpen={isInwardEqOpen}
+                  onToggleOpen={() => setIsInwardEqOpen(!isInwardEqOpen)}
+                  operationType="Unloading"
+                />
+
+                {/* Actions */}
+                <div className="flex items-center justify-end gap-3 pt-6 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setViewMode(selectedProjectId ? 'project-detail' : 'yard-detail')}
+                    disabled={isSubmitting}
+                    className="px-5 py-2.5 text-xs font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="flex items-center gap-2 px-6 py-2.5 text-xs font-black uppercase tracking-wider text-white bg-[#00705a] hover:bg-[#005a48] rounded-xl shadow-md hover:shadow-lg transition-all disabled:opacity-50"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <RefreshCw size={15} className="animate-spin" />
+                        <span>Recording Gate Receipt & Weighbridge...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check size={16} />
+                        <span>Confirm Stock Inward ({calculatedStockAddNet} MT) & Generate GRN</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )
+      }
+
+      {/* ============================================================== */}
+      {/* MODALS: SHIFT STOCK, ADD RACK, ISSUE, RECONCILE, GRN SLIP     */}
+      {/* ============================================================== */}
+
+      {/* MODAL: SHIFT STOCK WITHIN STOCKYARD */}
+      {
+        isShiftModalOpen && selectedYard && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-xl max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+              <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-indigo-50/50 shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold">
+                    <ArrowLeftRight size={18} />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900 tracking-tight">Shift Stock Within Stockyard</h3>
+                    <p className="text-xs text-slate-500">Internal relocation between racks/stacks in {selectedYard.yardName}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsShiftModalOpen(false)}
+                  className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <form onSubmit={handleSubmitInternalShift} className="p-6 space-y-4 overflow-y-auto">
+                {formError && (
+                  <div className="flex items-center gap-2 p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold rounded-xl">
+                    <AlertCircle size={15} className="shrink-0" />
+                    <span>{formError}</span>
+                  </div>
+                )}
+
+                {/* Stockyard (auto-selected & read only) */}
                 <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">Weighbridge Electronic Slip No.</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. WB-SLIP-9041"
-                    value={stockAddForm.weighbridgeSlipNumber}
-                    onChange={e => setStockAddForm({ ...stockAddForm, weighbridgeSlipNumber: e.target.value })}
-                    className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
-                  />
+                  <label className="block text-xs font-black uppercase tracking-wider text-slate-500 mb-1">
+                    Stockyard Hub
+                  </label>
+                  <div className="px-3.5 py-2 bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-700">
+                    {selectedYard.yardName} ({selectedYard.yardCode})
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">E-Way Bill / Government Waybill No.</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. EWB-2026-441209"
-                    value={stockAddForm.waybillNumber}
-                    onChange={e => setStockAddForm({ ...stockAddForm, waybillNumber: e.target.value })}
-                    className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* STEP 5: QUALITY & REMARKS */}
-          <div className="space-y-3 pt-6 border-t border-slate-100">
-            <div className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-2">
-              <span className="w-5 h-5 rounded-full bg-[#00705a] text-white flex items-center justify-center text-[11px]">5</span>
-              <span>Quality Inspection & Receiving Sign-off</span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Certified Grade Specification</label>
-                <input
-                  type="text"
-                  placeholder="e.g. RDSO Class-A / MORTH 401"
-                  value={stockAddForm.qualityGrade}
-                  onChange={e => setStockAddForm({ ...stockAddForm, qualityGrade: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Moisture Content (% Deduction)</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  placeholder="1.2"
-                  value={stockAddForm.moisturePct}
-                  onChange={e => setStockAddForm({ ...stockAddForm, moisturePct: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Inspection & Gate Remarks</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Visual inspection passed, zero mud/fine silt contamination"
-                  value={stockAddForm.remarks}
-                  onChange={e => setStockAddForm({ ...stockAddForm, remarks: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Heavy Equipment Used (Unloading Machinery) */}
-          <EquipmentUsedPicker
-            eligibleList={eligibleEquipment}
-            selectedList={inwardEquipment}
-            onChange={setInwardEquipment}
-            isOpen={isInwardEqOpen}
-            onToggleOpen={() => setIsInwardEqOpen(!isInwardEqOpen)}
-            operationType="Unloading"
-          />
-
-          {/* Actions */}
-          <div className="flex items-center justify-end gap-3 pt-6 border-t border-slate-100">
-            <button
-              type="button"
-              onClick={() => setViewMode(selectedProjectId ? 'project-detail' : 'yard-detail')}
-              disabled={isSubmitting}
-              className="px-5 py-2.5 text-xs font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="flex items-center gap-2 px-6 py-2.5 text-xs font-black uppercase tracking-wider text-white bg-[#00705a] hover:bg-[#005a48] rounded-xl shadow-md hover:shadow-lg transition-all disabled:opacity-50"
-            >
-              {isSubmitting ? (
-                <>
-                  <RefreshCw size={15} className="animate-spin" />
-                  <span>Recording Gate Receipt & Weighbridge...</span>
-                </>
-              ) : (
-                <>
-                  <Check size={16} />
-                  <span>Confirm Stock Inward ({calculatedStockAddNet} MT) & Generate GRN</span>
-                </>
-              )}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-}
-
-{/* ============================================================== */ }
-{/* MODALS: SHIFT STOCK, ADD RACK, ISSUE, RECONCILE, GRN SLIP     */ }
-{/* ============================================================== */ }
-
-{/* MODAL: SHIFT STOCK WITHIN STOCKYARD */ }
-{
-  isShiftModalOpen && selectedYard && (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-xl max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
-        <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-indigo-50/50 shrink-0">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold">
-              <ArrowLeftRight size={18} />
-            </div>
-            <div>
-              <h3 className="text-base font-black text-slate-900 tracking-tight">Shift Stock Within Stockyard</h3>
-              <p className="text-xs text-slate-500">Internal relocation between racks/stacks in {selectedYard.yardName}</p>
-            </div>
-          </div>
-          <button
-            onClick={() => setIsShiftModalOpen(false)}
-            className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100"
-          >
-            <X size={18} />
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmitInternalShift} className="p-6 space-y-4 overflow-y-auto">
-          {formError && (
-            <div className="flex items-center gap-2 p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold rounded-xl">
-              <AlertCircle size={15} className="shrink-0" />
-              <span>{formError}</span>
-            </div>
-          )}
-
-          {/* Stockyard (auto-selected & read only) */}
-          <div>
-            <label className="block text-xs font-black uppercase tracking-wider text-slate-500 mb-1">
-              Stockyard Hub
-            </label>
-            <div className="px-3.5 py-2 bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-700">
-              {selectedYard.yardName} ({selectedYard.yardCode})
-            </div>
-          </div>
-
-          {/* Project & Material */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-                Project <span className="text-rose-500">*</span>
-              </label>
-              <select
-                required
-                value={shiftForm.projectId}
-                onChange={e => {
-                  const pId = e.target.value;
-                  const match = projects.find(p => p.projectId === pId || p.id === pId);
-                  setShiftForm({
-                    ...shiftForm,
-                    projectId: pId,
-                    projectName: match?.name || pId
-                  });
-                }}
-                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 cursor-pointer"
-              >
-                <option value="">Select Project</option>
-                {projects.map(p => (
-                  <option key={p.projectId || p.id} value={p.projectId || p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-                Material Type <span className="text-rose-500">*</span>
-              </label>
-              <input
-                type="text"
-                required
-                placeholder="e.g. Track Ballast 40mm"
-                value={shiftForm.materialName}
-                onChange={e => setShiftForm({ ...shiftForm, materialName: e.target.value })}
-                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
-              />
-            </div>
-          </div>
-
-          {/* Source & Destination Locations */}
-          <div className="p-4 bg-indigo-50/50 rounded-2xl border border-indigo-100 space-y-3">
-            <div className="text-[11px] font-black uppercase tracking-wider text-indigo-900">
-              Internal Relocation Movement
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Source Location / Rack <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Rack A / Bay 1"
-                  value={shiftForm.sourceRackName}
-                  onChange={e => setShiftForm({ ...shiftForm, sourceRackName: e.target.value })}
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
-                />
-                <div className="text-[10px] text-slate-500 mt-1">
-                  Available at Source: <strong className="text-indigo-800">{availableAtSourceRack.toFixed(2)} {shiftForm.unit}</strong>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Destination Location / Rack <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Rack B / Stack 2"
-                  value={shiftForm.destinationRackName}
-                  onChange={e => setShiftForm({ ...shiftForm, destinationRackName: e.target.value })}
-                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Quantity to Shift */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-                Quantity to Shift (MT) <span className="text-rose-500">*</span>
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                required
-                placeholder="10.00"
-                value={shiftForm.quantity}
-                onChange={e => setShiftForm({ ...shiftForm, quantity: e.target.value })}
-                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-                Shift Date & Time
-              </label>
-              <input
-                type="datetime-local"
-                value={shiftForm.shiftDate}
-                onChange={e => setShiftForm({ ...shiftForm, shiftDate: e.target.value })}
-                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
-              />
-            </div>
-          </div>
-
-          {/* Heavy Equipment Assignment (JCB, Loader, Excavator) */}
-          <EquipmentUsedPicker
-            eligibleList={eligibleEquipment}
-            selectedList={shiftEquipment}
-            onChange={setShiftEquipment}
-            isOpen={isShiftEqOpen}
-            onToggleOpen={() => setIsShiftEqOpen(!isShiftEqOpen)}
-            operationType="Internal Shift"
-          />
-
-          {/* Remarks */}
-          <div>
-            <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-              Relocation Remarks / Reason
-            </label>
-            <input
-              type="text"
-              placeholder="e.g. Cleared Siding Bay for upcoming incoming rake"
-              value={shiftForm.remarks}
-              onChange={e => setShiftForm({ ...shiftForm, remarks: e.target.value })}
-              className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
-            />
-          </div>
-
-          <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-100">
-            <button
-              type="button"
-              onClick={() => setIsShiftModalOpen(false)}
-              disabled={isSubmitting}
-              className="px-4 py-2 text-xs font-bold text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting || parseFloat(shiftForm.quantity) > availableAtSourceRack}
-              className="flex items-center gap-1.5 px-5 py-2 text-xs font-black uppercase tracking-wider text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-sm transition-all disabled:opacity-50"
-            >
-              {isSubmitting ? (
-                <>
-                  <RefreshCw size={14} className="animate-spin" />
-                  <span>Shifting...</span>
-                </>
-              ) : (
-                <>
-                  <Check size={14} />
-                  <span>Confirm Internal Shift</span>
-                </>
-              )}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-}
-
-{/* MODAL: ADD / EDIT STORAGE LOCATION (RACK) */ }
-{
-  isAddRackModalOpen && selectedYard && (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
-        <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-          <h3 className="text-base font-black text-slate-900 tracking-tight">
-            {editingRack ? 'Edit Storage Location' : 'Add Storage Location / Rack'}
-          </h3>
-          <button
-            onClick={() => setIsAddRackModalOpen(false)}
-            className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100"
-          >
-            <X size={18} />
-          </button>
-        </div>
-
-        <form onSubmit={handleSaveRack} className="p-6 space-y-4">
-          {formError && (
-            <div className="flex items-center gap-2 p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold rounded-xl">
-              <AlertCircle size={15} className="shrink-0" />
-              <span>{formError}</span>
-            </div>
-          )}
-
-          <div>
-            <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-              Rack / Location Name <span className="text-rose-500">*</span>
-            </label>
-            <input
-              type="text"
-              required
-              placeholder="e.g. Rack A / North Stack 01"
-              value={rackForm.rackName}
-              onChange={e => setRackForm({ ...rackForm, rackName: e.target.value })}
-              className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-                Unique Code
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. RCK-A"
-                value={rackForm.rackCode}
-                onChange={e => setRackForm({ ...rackForm, rackCode: e.target.value.toUpperCase() })}
-                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 uppercase"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-                Location Type
-              </label>
-              <select
-                value={rackForm.locationType}
-                onChange={e => setRackForm({ ...rackForm, locationType: e.target.value })}
-                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 cursor-pointer"
-              >
-                <option value="Rack">Rack</option>
-                <option value="Stack">Stack</option>
-                <option value="Bay">Bay</option>
-                <option value="Open Storage Area">Open Storage Area</option>
-                <option value="Silo">Silo</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-                Capacity (MT)
-              </label>
-              <input
-                type="number"
-                value={rackForm.capacityTons}
-                onChange={e => setRackForm({ ...rackForm, capacityTons: e.target.value })}
-                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-                Status
-              </label>
-              <select
-                value={rackForm.status}
-                onChange={e => setRackForm({ ...rackForm, status: e.target.value })}
-                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 cursor-pointer"
-              >
-                <option value="Active">Active</option>
-                <option value="Inactive">Inactive</option>
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-              Optional Description
-            </label>
-            <textarea
-              rows={2}
-              placeholder="e.g. Siding adjacent platform for high speed loading"
-              value={rackForm.description}
-              onChange={e => setRackForm({ ...rackForm, description: e.target.value })}
-              className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
-            />
-          </div>
-
-          <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-100">
-            <button
-              type="button"
-              onClick={() => setIsAddRackModalOpen(false)}
-              className="px-4 py-2 text-xs font-bold text-slate-600 bg-slate-100 rounded-xl"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="px-5 py-2 text-xs font-black uppercase tracking-wider text-white bg-[#00705a] hover:bg-[#005a48] rounded-xl shadow-sm"
-            >
-              {editingRack ? 'Update Location' : 'Save Location'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-}
-
-{/* MODAL: ADD STOCKYARD */ }
-{
-  isAddYardModalOpen && (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
-        <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-emerald-50 text-[#00705a] flex items-center justify-center font-bold">
-              <Layers size={18} />
-            </div>
-            <div>
-              <h3 className="text-base font-black text-slate-900 tracking-tight">Add Stockyard</h3>
-              <p className="text-xs text-slate-500">Register a new storage location or transshipment siding</p>
-            </div>
-          </div>
-          <button
-            onClick={() => setIsAddYardModalOpen(false)}
-            className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 transition-colors"
-          >
-            <X size={18} />
-          </button>
-        </div>
-
-        <form onSubmit={handleCreateStockyard} className="p-6 space-y-4">
-          {formError && (
-            <div className="flex items-center gap-2 p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold rounded-xl">
-              <AlertCircle size={15} className="shrink-0" />
-              <span>{formError}</span>
-            </div>
-          )}
-
-          <div>
-            <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-              Stockyard Name <span className="text-rose-500">*</span>
-            </label>
-            <input
-              type="text"
-              required
-              placeholder="e.g. Paradip Port Central Stockyard"
-              value={yardForm.yardName}
-              onChange={e => setYardForm({ ...yardForm, yardName: e.target.value })}
-              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#00705a] focus:bg-white transition-all"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-              Stockyard Location <span className="text-rose-500">*</span>
-            </label>
-            <input
-              type="text"
-              required
-              placeholder="e.g. Plot No. 14, Siding B, Paradip Terminal"
-              value={yardForm.location}
-              onChange={e => setYardForm({ ...yardForm, location: e.target.value })}
-              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#00705a] focus:bg-white transition-all"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-              Division <span className="text-rose-500">*</span>
-            </label>
-            <select
-              required
-              value={yardForm.divisionId}
-              onChange={e => setYardForm({ ...yardForm, divisionId: e.target.value })}
-              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#00705a] focus:bg-white transition-all cursor-pointer"
-            >
-              <option value="">Select Division</option>
-              {divisions.map(d => (
-                <option key={d.id} value={d.id}>
-                  {d.name} {d.state ? `(${d.state})` : ''}
-                </option>
-              ))}
-              {divisions.length === 0 && (
-                <option value="corp-default">Corporate Operations Division</option>
-              )}
-            </select>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-                Stockyard Code
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. SYD-1001"
-                value={yardForm.yardCode}
-                onChange={e => setYardForm({ ...yardForm, yardCode: e.target.value })}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#00705a] focus:bg-white transition-all uppercase"
-              />
-              <p className="text-[10px] text-slate-400 mt-0.5">Auto-generated if empty</p>
-            </div>
-
-            <div>
-              <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-                Status
-              </label>
-              <select
-                value={yardForm.status}
-                onChange={e => setYardForm({ ...yardForm, status: e.target.value })}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#00705a] focus:bg-white transition-all cursor-pointer"
-              >
-                <option value="Active">Active</option>
-                <option value="Inactive">Inactive</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-                Total Capacity (MT)
-              </label>
-              <input
-                type="number"
-                min="100"
-                value={yardForm.totalCapacityTons}
-                onChange={e => setYardForm({ ...yardForm, totalCapacityTons: e.target.value })}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#00705a] focus:bg-white transition-all"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-                Weighbridge Installed
-              </label>
-              <select
-                value={yardForm.weighbridgeInstalled ? 'true' : 'false'}
-                onChange={e => setYardForm({ ...yardForm, weighbridgeInstalled: e.target.value === 'true' })}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#00705a] focus:bg-white transition-all cursor-pointer"
-              >
-                <option value="true">Yes (Electronic 100T)</option>
-                <option value="false">No Weighbridge</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-100">
-            <button
-              type="button"
-              onClick={() => setIsAddYardModalOpen(false)}
-              disabled={isSubmitting}
-              className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="flex items-center gap-1.5 px-5 py-2 text-xs font-black uppercase tracking-wider text-white bg-[#00705a] hover:bg-[#005a48] rounded-xl shadow-sm transition-all disabled:opacity-50"
-            >
-              {isSubmitting ? (
-                <>
-                  <RefreshCw size={14} className="animate-spin" />
-                  <span>Saving...</span>
-                </>
-              ) : (
-                <>
-                  <Check size={14} />
-                  <span>Save Stockyard</span>
-                </>
-              )}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-}
-
-{/* MODAL: PRINTABLE GOODS RECEIPT NOTE (GRN) SLIP */ }
-{
-  isGrnSlipModalOpen && activeGrnReceipt && (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
-        <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-emerald-50/60">
-          <div className="flex items-center gap-2">
-            <ClipboardCheck size={20} className="text-[#00705a]" />
-            <h3 className="text-base font-black text-slate-900">Goods Receipt Note (GRN) Certificate</h3>
-          </div>
-          <button
-            onClick={() => setIsGrnSlipModalOpen(false)}
-            className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100"
-          >
-            <X size={18} />
-          </button>
-        </div>
-
-        <div className="p-6 space-y-4 text-xs font-medium text-slate-700">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-            <div>
-              <div className="text-[10px] font-bold text-slate-400 uppercase">Document Number</div>
-              <div className="text-base font-black text-slate-900">{activeGrnReceipt.grnNumber || `GRN-${activeGrnReceipt.id}`}</div>
-            </div>
-            <div className="text-right">
-              <div className="text-[10px] font-bold text-slate-400 uppercase">Verified Date</div>
-              <div className="text-xs font-bold text-slate-800">{new Date(activeGrnReceipt.createdAt).toLocaleString()}</div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3 pb-3 border-b border-slate-100 text-xs">
-            <div>
-              <span className="text-slate-400 block text-[10px] uppercase font-bold">Project & Commodity</span>
-              <span className="font-bold text-slate-900">{activeGrnReceipt.projectName}</span>
-              <div className="text-slate-600">{activeGrnReceipt.materialName}</div>
-            </div>
-
-            <div>
-              <span className="text-slate-400 block text-[10px] uppercase font-bold">Vehicle Registration</span>
-              <span className="font-bold text-slate-900">{activeGrnReceipt.vehicleNumber || '—'}</span>
-              <div className="text-slate-600">{activeGrnReceipt.driverName || 'Driver'}</div>
-            </div>
-          </div>
-
-          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2">
-            <div className="text-[10px] font-black uppercase tracking-wider text-slate-500">Weighbridge Measurement Certificate</div>
-            <div className="grid grid-cols-3 gap-2 text-center">
-              <div className="bg-white p-2 rounded-xl border border-slate-100">
-                <div className="text-[10px] text-slate-400 font-bold">Gross Wt</div>
-                <div className="font-black text-slate-800">{activeGrnReceipt.grossWeight || '—'} MT</div>
-              </div>
-              <div className="bg-white p-2 rounded-xl border border-slate-100">
-                <div className="text-[10px] text-slate-400 font-bold">Tare Wt</div>
-                <div className="font-black text-slate-800">{activeGrnReceipt.tareWeight || '—'} MT</div>
-              </div>
-              <div className="bg-emerald-50 p-2 rounded-xl border border-emerald-200">
-                <div className="text-[10px] text-[#00705a] font-bold">Net Accepted</div>
-                <div className="font-black text-[#00705a]">{activeGrnReceipt.quantity} MT</div>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3 text-[11px] text-slate-500 pt-1">
-            <div>Weighbridge Slip: <strong>{activeGrnReceipt.weighbridgeSlipNumber || '—'}</strong></div>
-            <div>Transit Shortage: <strong>{activeGrnReceipt.discrepancyQuantity ? `${activeGrnReceipt.discrepancyQuantity} MT` : '0.00 MT'}</strong></div>
-            <div>Storage Location: <strong>{activeGrnReceipt.rackName || 'Open Storage Area'}</strong></div>
-            <div>Origin Source: <strong>{activeGrnReceipt.sourceLocation || 'Mine Face'}</strong></div>
-          </div>
-
-          <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-100">
-            <button
-              type="button"
-              onClick={() => window.print()}
-              className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
-            >
-              <Printer size={14} />
-              <span>Print Slip</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsGrnSlipModalOpen(false)}
-              className="px-5 py-2 text-xs font-black uppercase tracking-wider text-white bg-[#00705a] hover:bg-[#005a48] rounded-xl shadow-sm"
-            >
-              Done
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-{/* MODAL: ISSUE MATERIAL */ }
-{
-  isIssueModalOpen && selectedYard && (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
-        <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-blue-50/50">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center font-bold">
-              <ArrowUpRight size={18} />
-            </div>
-            <div>
-              <h3 className="text-base font-black text-slate-900 tracking-tight">Issue Material from {selectedYard.yardName}</h3>
-              <p className="text-xs text-slate-500">Outward dispatch with strict project inventory validation</p>
-            </div>
-          </div>
-          <button
-            onClick={() => setIsIssueModalOpen(false)}
-            className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100"
-          >
-            <X size={18} />
-          </button>
-        </div>
-
-        <form onSubmit={handleRecordIssue} className="p-6 space-y-4 overflow-y-auto">
-          {formError && (
-            <div className="flex items-center gap-2 p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold rounded-xl">
-              <AlertCircle size={15} className="shrink-0" />
-              <span>{formError}</span>
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-                Project <span className="text-rose-500">*</span>
-              </label>
-              <select
-                required
-                value={issueForm.projectId}
-                onChange={e => {
-                  const pId = e.target.value;
-                  const match = projects.find(p => p.projectId === pId || p.id === pId);
-                  setIssueForm({
-                    ...issueForm,
-                    projectId: pId,
-                    projectName: match?.name || pId
-                  });
-                }}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 focus:bg-white transition-all cursor-pointer"
-              >
-                <option value="">Select Project</option>
-                {projects.map(p => (
-                  <option key={p.projectId || p.id} value={p.projectId || p.id}>
-                    {p.name} ({p.projectId || p.id})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-                Material Type <span className="text-rose-500">*</span>
-              </label>
-              <input
-                type="text"
-                required
-                placeholder="e.g. Track Ballast 40mm"
-                value={issueForm.materialName}
-                onChange={e => setIssueForm({ ...issueForm, materialName: e.target.value })}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 focus:bg-white transition-all"
-              />
-            </div>
-          </div>
-
-          {/* Source Rack / Location (Optional) */}
-          {racks.length > 0 && (
-            <div>
-              <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-                Source Rack / Location (Optional)
-              </label>
-              <select
-                value={issueForm.rackId}
-                onChange={e => {
-                  const rId = e.target.value;
-                  const match = racks.find(r => String(r.id) === rId);
-                  setIssueForm({
-                    ...issueForm,
-                    rackId: rId,
-                    rackName: match?.rackName || ''
-                  });
-                }}
-                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 cursor-pointer"
-              >
-                <option value="">Dispatch from Any Storage Location / Yard Floor</option>
-                {racks.map(r => (
-                  <option key={r.id} value={r.id}>
-                    {r.rackName} ({r.rackCode})
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {/* Available Stock Indicator */}
-          <div className="p-3.5 bg-blue-50/70 border border-blue-200 rounded-2xl flex items-center justify-between">
-            <div>
-              <div className="text-[11px] font-bold text-blue-900 uppercase tracking-wider">
-                Project Available Stock in Yard
-              </div>
-              <div className="text-xs text-blue-700 font-medium mt-0.5">
-                {issueForm.projectId ? `Project: ${issueForm.projectId}` : 'Select a project to check balance'}
-              </div>
-            </div>
-            <div className="text-right">
-              <div className="text-base font-black text-blue-950">
-                {selectedProjectAvailableStock.toLocaleString()} {issueForm.unit}
-              </div>
-              <div className="text-[10px] text-blue-600 font-bold">Max Allowed to Issue</div>
-            </div>
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="text-xs font-black uppercase tracking-wider text-slate-700">
-                Quantity to Issue (MT) <span className="text-rose-500">*</span>
-              </label>
-              {parseFloat(issueForm.quantity) > selectedProjectAvailableStock && (
-                <span className="text-[11px] font-bold text-rose-600">
-                  Exceeds available balance!
-                </span>
-              )}
-            </div>
-            <input
-              type="number"
-              step="0.01"
-              required
-              placeholder="e.g. 35.20"
-              max={selectedProjectAvailableStock}
-              value={issueForm.quantity}
-              onChange={e => setIssueForm({ ...issueForm, quantity: e.target.value })}
-              className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-black focus:outline-none transition-all ${parseFloat(issueForm.quantity) > selectedProjectAvailableStock
-                ? 'bg-rose-50 border border-rose-300 text-rose-800'
-                : 'bg-slate-50 border border-slate-200 text-slate-900 focus:border-blue-600 focus:bg-white'
-                }`}
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-                Outgoing Vehicle Number <span className="text-rose-500">*</span>
-              </label>
-              <input
-                type="text"
-                required
-                placeholder="e.g. UP-14-BT-9021"
-                value={issueForm.vehicleNumber}
-                onChange={e => setIssueForm({ ...issueForm, vehicleNumber: e.target.value.toUpperCase() })}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 uppercase"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-                Destination Site / Client
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. Metro Casting Yard Block-4"
-                value={issueForm.destinationLocation}
-                onChange={e => setIssueForm({ ...issueForm, destinationLocation: e.target.value })}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-                Driver Name & Contact
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. Rajesh Kumar (+91...)"
-                value={issueForm.driverName}
-                onChange={e => setIssueForm({ ...issueForm, driverName: e.target.value })}
-                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-                Outward Waybill / Slip No.
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. WB-2026-9042"
-                value={issueForm.waybillNumber}
-                onChange={e => setIssueForm({ ...issueForm, waybillNumber: e.target.value })}
-                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
-              />
-            </div>
-          </div>
-
-          {/* Heavy Equipment Assignment (JCB, Loader, Excavator) */}
-          <EquipmentUsedPicker
-            eligibleList={eligibleEquipment}
-            selectedList={issueEquipment}
-            onChange={setIssueEquipment}
-            isOpen={isIssueEqOpen}
-            onToggleOpen={() => setIsIssueEqOpen(!isIssueEqOpen)}
-            operationType="Loading"
-          />
-
-          <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-100">
-            <button
-              type="button"
-              onClick={() => setIsIssueModalOpen(false)}
-              disabled={isSubmitting}
-              className="px-4 py-2 text-xs font-bold text-slate-600 bg-slate-100 rounded-xl"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting || parseFloat(issueForm.quantity) > selectedProjectAvailableStock}
-              className="flex items-center gap-1.5 px-5 py-2 text-xs font-black uppercase tracking-wider text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-sm transition-all disabled:opacity-50"
-            >
-              Confirm Dispatch
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-}
-
-{/* MODAL: RECONCILIATION / WASTAGE & AUTOMATED BALANCE ENGINE */ }
-{
-  isAdjustModalOpen && selectedYard && (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
-        <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-slate-100 text-slate-800 flex items-center justify-center font-bold border border-slate-200">
-              <Split size={18} />
-            </div>
-            <div>
-              <h3 className="text-base font-black text-slate-900 tracking-tight">Record Wastage or Stock Reconciliation</h3>
-              <p className="text-xs text-slate-500">Record transit shrinkage, moisture loss, or physical audit adjustments</p>
-            </div>
-          </div>
-          <button
-            onClick={() => setIsAdjustModalOpen(false)}
-            className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 cursor-pointer"
-          >
-            <X size={18} />
-          </button>
-        </div>
-
-        <form onSubmit={handleRecordAdjustment} className="p-6 space-y-4">
-          {formError && (
-            <div className="flex items-center gap-2 p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold rounded-xl">
-              <AlertCircle size={15} className="shrink-0" />
-              <span>{formError}</span>
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-                Project <span className="text-rose-500">*</span>
-              </label>
-              <select
-                required
-                value={adjustForm.projectId}
-                onChange={e => {
-                  const pId = e.target.value;
-                  const match = projects.find(p => p.projectId === pId || p.id === pId);
-                  const projectMats = projectInventory.filter(p => p.projectId === pId);
-                  setAdjustForm({
-                    ...adjustForm,
-                    projectId: pId,
-                    projectName: match?.name || pId,
-                    materialName: projectMats[0]?.materialName || adjustForm.materialName
-                  });
-                }}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 cursor-pointer"
-              >
-                <option value="">Select Project</option>
-                {projects.map(p => (
-                  <option key={p.projectId || p.id} value={p.projectId || p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-                Material (Matches Inward) <span className="text-rose-500">*</span>
-              </label>
-              {(() => {
-                const availableMats = Array.from(new Set([
-                  ...(projectDetailData?.materials?.map(m => m.materialName) || []),
-                  ...(projectInventory.filter(p => p.projectId === adjustForm.projectId).map(p => p.materialName) || [])
-                ].filter(Boolean)));
-
-                if (availableMats.length > 0) {
-                  return (
+                {/* Project & Material */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                      Project <span className="text-rose-500">*</span>
+                    </label>
                     <select
-                      value={adjustForm.materialName}
+                      required
+                      value={shiftForm.projectId}
                       onChange={e => {
-                        const val = e.target.value;
-                        const mObj = projectDetailData?.materials.find(m => m.materialName === val);
-                        const inQty = mObj ? mObj.totalReceived : 0;
-                        const outQty = mObj ? mObj.totalIssued : 0;
-                        const lossQty = mObj ? (mObj.totalLoss + mObj.totalAdjustment) : 0;
-                        const diff = parseFloat((inQty - outQty - lossQty).toFixed(2));
+                        const pId = e.target.value;
+                        const match = projects.find(p => p.projectId === pId || p.id === pId);
+                        setShiftForm({
+                          ...shiftForm,
+                          projectId: pId,
+                          projectName: match?.name || pId
+                        });
+                      }}
+                      className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 cursor-pointer"
+                    >
+                      <option value="">Select Project</option>
+                      {projects.map(p => (
+                        <option key={p.projectId || p.id} value={p.projectId || p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                      Material Type <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Track Ballast 40mm"
+                      value={shiftForm.materialName}
+                      onChange={e => setShiftForm({ ...shiftForm, materialName: e.target.value })}
+                      className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                    />
+                  </div>
+                </div>
+
+                {/* Source & Destination Locations */}
+                <div className="p-4 bg-indigo-50/50 rounded-2xl border border-indigo-100 space-y-3">
+                  <div className="text-[11px] font-black uppercase tracking-wider text-indigo-900">
+                    Internal Relocation Movement
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Source Location / Rack <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Rack A / Bay 1"
+                        value={shiftForm.sourceRackName}
+                        onChange={e => setShiftForm({ ...shiftForm, sourceRackName: e.target.value })}
+                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                      />
+                      <div className="text-[10px] text-slate-500 mt-1">
+                        Available at Source: <strong className="text-indigo-800">{availableAtSourceRack.toFixed(2)} {shiftForm.unit}</strong>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Destination Location / Rack <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Rack B / Stack 2"
+                        value={shiftForm.destinationRackName}
+                        onChange={e => setShiftForm({ ...shiftForm, destinationRackName: e.target.value })}
+                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Quantity to Shift */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                      Quantity to Shift (MT) <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      required
+                      placeholder="10.00"
+                      value={shiftForm.quantity}
+                      onChange={e => setShiftForm({ ...shiftForm, quantity: e.target.value })}
+                      className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                      Shift Date & Time
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={shiftForm.shiftDate}
+                      onChange={e => setShiftForm({ ...shiftForm, shiftDate: e.target.value })}
+                      className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                    />
+                  </div>
+                </div>
+
+                {/* Heavy Equipment Assignment (JCB, Loader, Excavator) */}
+                <EquipmentUsedPicker
+                  eligibleList={eligibleEquipment}
+                  selectedList={shiftEquipment}
+                  onChange={setShiftEquipment}
+                  isOpen={isShiftEqOpen}
+                  onToggleOpen={() => setIsShiftEqOpen(!isShiftEqOpen)}
+                  operationType="Internal Shift"
+                />
+
+                {/* Remarks */}
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                    Relocation Remarks / Reason
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Cleared Siding Bay for upcoming incoming rake"
+                    value={shiftForm.remarks}
+                    onChange={e => setShiftForm({ ...shiftForm, remarks: e.target.value })}
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setIsShiftModalOpen(false)}
+                    disabled={isSubmitting}
+                    className="px-4 py-2 text-xs font-bold text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting || parseFloat(shiftForm.quantity) > availableAtSourceRack}
+                    className="flex items-center gap-1.5 px-5 py-2 text-xs font-black uppercase tracking-wider text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-sm transition-all disabled:opacity-50"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <RefreshCw size={14} className="animate-spin" />
+                        <span>Shifting...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check size={14} />
+                        <span>Confirm Internal Shift</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )
+      }
+
+      {/* MODAL: ADD / EDIT STORAGE LOCATION (RACK) */}
+      {
+        isAddRackModalOpen && selectedYard && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+              <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <h3 className="text-base font-black text-slate-900 tracking-tight">
+                  {editingRack ? 'Edit Storage Location' : 'Add Storage Location / Rack'}
+                </h3>
+                <button
+                  onClick={() => setIsAddRackModalOpen(false)}
+                  className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveRack} className="p-6 space-y-4">
+                {formError && (
+                  <div className="flex items-center gap-2 p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold rounded-xl">
+                    <AlertCircle size={15} className="shrink-0" />
+                    <span>{formError}</span>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                    Rack / Location Name <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Rack A / North Stack 01"
+                    value={rackForm.rackName}
+                    onChange={e => setRackForm({ ...rackForm, rackName: e.target.value })}
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                      Unique Code
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. RCK-A"
+                      value={rackForm.rackCode}
+                      onChange={e => setRackForm({ ...rackForm, rackCode: e.target.value.toUpperCase() })}
+                      className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 uppercase"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                      Location Type
+                    </label>
+                    <select
+                      value={rackForm.locationType}
+                      onChange={e => setRackForm({ ...rackForm, locationType: e.target.value })}
+                      className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 cursor-pointer"
+                    >
+                      <option value="Rack">Rack</option>
+                      <option value="Stack">Stack</option>
+                      <option value="Bay">Bay</option>
+                      <option value="Open Storage Area">Open Storage Area</option>
+                      <option value="Silo">Silo</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                      Capacity (MT)
+                    </label>
+                    <input
+                      type="number"
+                      value={rackForm.capacityTons}
+                      onChange={e => setRackForm({ ...rackForm, capacityTons: e.target.value })}
+                      className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                      Status
+                    </label>
+                    <select
+                      value={rackForm.status}
+                      onChange={e => setRackForm({ ...rackForm, status: e.target.value })}
+                      className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 cursor-pointer"
+                    >
+                      <option value="Active">Active</option>
+                      <option value="Inactive">Inactive</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                    Optional Description
+                  </label>
+                  <textarea
+                    rows={2}
+                    placeholder="e.g. Siding adjacent platform for high speed loading"
+                    value={rackForm.description}
+                    onChange={e => setRackForm({ ...rackForm, description: e.target.value })}
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddRackModalOpen(false)}
+                    className="px-4 py-2 text-xs font-bold text-slate-600 bg-slate-100 rounded-xl"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="px-5 py-2 text-xs font-black uppercase tracking-wider text-white bg-[#00705a] hover:bg-[#005a48] rounded-xl shadow-sm"
+                  >
+                    {editingRack ? 'Update Location' : 'Save Location'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )
+      }
+
+      {/* MODAL: ADD STOCKYARD */}
+      {
+        isAddYardModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
+              <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-50 text-[#00705a] flex items-center justify-center font-bold">
+                    <Layers size={18} />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900 tracking-tight">Add Stockyard</h3>
+                    <p className="text-xs text-slate-500">Register a new storage location or transshipment siding</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsAddYardModalOpen(false)}
+                  className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <form onSubmit={handleCreateStockyard} className="p-6 space-y-4">
+                {formError && (
+                  <div className="flex items-center gap-2 p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold rounded-xl">
+                    <AlertCircle size={15} className="shrink-0" />
+                    <span>{formError}</span>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                    Stockyard Name <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Paradip Port Central Stockyard"
+                    value={yardForm.yardName}
+                    onChange={e => setYardForm({ ...yardForm, yardName: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#00705a] focus:bg-white transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                    Stockyard Location <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Plot No. 14, Siding B, Paradip Terminal"
+                    value={yardForm.location}
+                    onChange={e => setYardForm({ ...yardForm, location: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#00705a] focus:bg-white transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                    Division <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    required
+                    value={yardForm.divisionId}
+                    onChange={e => setYardForm({ ...yardForm, divisionId: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#00705a] focus:bg-white transition-all cursor-pointer"
+                  >
+                    <option value="">Select Division</option>
+                    {divisions.map(d => (
+                      <option key={d.id} value={d.id}>
+                        {d.name} {d.state ? `(${d.state})` : ''}
+                      </option>
+                    ))}
+                    {divisions.length === 0 && (
+                      <option value="corp-default">Corporate Operations Division</option>
+                    )}
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                      Stockyard Code
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. SYD-1001"
+                      value={yardForm.yardCode}
+                      onChange={e => setYardForm({ ...yardForm, yardCode: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#00705a] focus:bg-white transition-all uppercase"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-0.5">Auto-generated if empty</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                      Status
+                    </label>
+                    <select
+                      value={yardForm.status}
+                      onChange={e => setYardForm({ ...yardForm, status: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#00705a] focus:bg-white transition-all cursor-pointer"
+                    >
+                      <option value="Active">Active</option>
+                      <option value="Inactive">Inactive</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                      Total Capacity (MT)
+                    </label>
+                    <input
+                      type="number"
+                      min="100"
+                      value={yardForm.totalCapacityTons}
+                      onChange={e => setYardForm({ ...yardForm, totalCapacityTons: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#00705a] focus:bg-white transition-all"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                      Weighbridge Installed
+                    </label>
+                    <select
+                      value={yardForm.weighbridgeInstalled ? 'true' : 'false'}
+                      onChange={e => setYardForm({ ...yardForm, weighbridgeInstalled: e.target.value === 'true' })}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#00705a] focus:bg-white transition-all cursor-pointer"
+                    >
+                      <option value="true">Yes (Electronic 100T)</option>
+                      <option value="false">No Weighbridge</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddYardModalOpen(false)}
+                    disabled={isSubmitting}
+                    className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="flex items-center gap-1.5 px-5 py-2 text-xs font-black uppercase tracking-wider text-white bg-[#00705a] hover:bg-[#005a48] rounded-xl shadow-sm transition-all disabled:opacity-50"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <RefreshCw size={14} className="animate-spin" />
+                        <span>Saving...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check size={14} />
+                        <span>Save Stockyard</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )
+      }
+
+      {/* MODAL: PRINTABLE GOODS RECEIPT NOTE (GRN) SLIP */}
+      {
+        isGrnSlipModalOpen && activeGrnReceipt && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
+              <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-emerald-50/60">
+                <div className="flex items-center gap-2">
+                  <ClipboardCheck size={20} className="text-[#00705a]" />
+                  <h3 className="text-base font-black text-slate-900">Goods Receipt Note (GRN) Certificate</h3>
+                </div>
+                <button
+                  onClick={() => setIsGrnSlipModalOpen(false)}
+                  className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-4 text-xs font-medium text-slate-700">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                  <div>
+                    <div className="text-[10px] font-bold text-slate-400 uppercase">Document Number</div>
+                    <div className="text-base font-black text-slate-900">{activeGrnReceipt.grnNumber || `GRN-${activeGrnReceipt.id}`}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[10px] font-bold text-slate-400 uppercase">Verified Date</div>
+                    <div className="text-xs font-bold text-slate-800">{new Date(activeGrnReceipt.createdAt).toLocaleString()}</div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 pb-3 border-b border-slate-100 text-xs">
+                  <div>
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Project & Commodity</span>
+                    <span className="font-bold text-slate-900">{activeGrnReceipt.projectName}</span>
+                    <div className="text-slate-600">{activeGrnReceipt.materialName}</div>
+                  </div>
+
+                  <div>
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Vehicle Registration</span>
+                    <span className="font-bold text-slate-900">{activeGrnReceipt.vehicleNumber || '—'}</span>
+                    <div className="text-slate-600">{activeGrnReceipt.driverName || 'Driver'}</div>
+                  </div>
+                </div>
+
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2">
+                  <div className="text-[10px] font-black uppercase tracking-wider text-slate-500">Weighbridge Measurement Certificate</div>
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div className="bg-white p-2 rounded-xl border border-slate-100">
+                      <div className="text-[10px] text-slate-400 font-bold">Gross Wt</div>
+                      <div className="font-black text-slate-800">{activeGrnReceipt.grossWeight || '—'} MT</div>
+                    </div>
+                    <div className="bg-white p-2 rounded-xl border border-slate-100">
+                      <div className="text-[10px] text-slate-400 font-bold">Tare Wt</div>
+                      <div className="font-black text-slate-800">{activeGrnReceipt.tareWeight || '—'} MT</div>
+                    </div>
+                    <div className="bg-emerald-50 p-2 rounded-xl border border-emerald-200">
+                      <div className="text-[10px] text-[#00705a] font-bold">Net Accepted</div>
+                      <div className="font-black text-[#00705a]">{activeGrnReceipt.quantity} MT</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 text-[11px] text-slate-500 pt-1">
+                  <div>Weighbridge Slip: <strong>{activeGrnReceipt.weighbridgeSlipNumber || '—'}</strong></div>
+                  <div>Transit Shortage: <strong>{activeGrnReceipt.discrepancyQuantity ? `${activeGrnReceipt.discrepancyQuantity} MT` : '0.00 MT'}</strong></div>
+                  <div>Storage Location: <strong>{activeGrnReceipt.rackName || 'Open Storage Area'}</strong></div>
+                  <div>Origin Source: <strong>{activeGrnReceipt.sourceLocation || 'Mine Face'}</strong></div>
+                </div>
+
+                <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+                  >
+                    <Printer size={14} />
+                    <span>Print Slip</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsGrnSlipModalOpen(false)}
+                    className="px-5 py-2 text-xs font-black uppercase tracking-wider text-white bg-[#00705a] hover:bg-[#005a48] rounded-xl shadow-sm"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      }
+
+      {/* MODAL: ISSUE MATERIAL */}
+      {
+        isIssueModalOpen && selectedYard && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
+              <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-blue-50/50">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center font-bold">
+                    <ArrowUpRight size={18} />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900 tracking-tight">Issue Material from {selectedYard.yardName}</h3>
+                    <p className="text-xs text-slate-500">Outward dispatch with strict project inventory validation</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsIssueModalOpen(false)}
+                  className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <form onSubmit={handleRecordIssue} className="p-6 space-y-4 overflow-y-auto">
+                {formError && (
+                  <div className="flex items-center gap-2 p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold rounded-xl">
+                    <AlertCircle size={15} className="shrink-0" />
+                    <span>{formError}</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                      Project <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      required
+                      value={issueForm.projectId}
+                      onChange={e => {
+                        const pId = e.target.value;
+                        const match = projects.find(p => p.projectId === pId || p.id === pId);
+                        setIssueForm({
+                          ...issueForm,
+                          projectId: pId,
+                          projectName: match?.name || pId
+                        });
+                      }}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 focus:bg-white transition-all cursor-pointer"
+                    >
+                      <option value="">Select Project</option>
+                      {projects.map(p => (
+                        <option key={p.projectId || p.id} value={p.projectId || p.id}>
+                          {p.name} ({p.projectId || p.id})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                      Material Type <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Track Ballast 40mm"
+                      value={issueForm.materialName}
+                      onChange={e => setIssueForm({ ...issueForm, materialName: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 focus:bg-white transition-all"
+                    />
+                  </div>
+                </div>
+
+                {/* Source Rack / Location (Optional) */}
+                {racks.length > 0 && (
+                  <div>
+                    <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                      Source Rack / Location (Optional)
+                    </label>
+                    <select
+                      value={issueForm.rackId}
+                      onChange={e => {
+                        const rId = e.target.value;
+                        const match = racks.find(r => String(r.id) === rId);
+                        setIssueForm({
+                          ...issueForm,
+                          rackId: rId,
+                          rackName: match?.rackName || ''
+                        });
+                      }}
+                      className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 cursor-pointer"
+                    >
+                      <option value="">Dispatch from Any Storage Location / Yard Floor</option>
+                      {racks.map(r => (
+                        <option key={r.id} value={r.id}>
+                          {r.rackName} ({r.rackCode})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Available Stock Indicator */}
+                <div className="p-3.5 bg-blue-50/70 border border-blue-200 rounded-2xl flex items-center justify-between">
+                  <div>
+                    <div className="text-[11px] font-bold text-blue-900 uppercase tracking-wider">
+                      Project Available Stock in Yard
+                    </div>
+                    <div className="text-xs text-blue-700 font-medium mt-0.5">
+                      {issueForm.projectId ? `Project: ${issueForm.projectId}` : 'Select a project to check balance'}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-base font-black text-blue-950">
+                      {selectedProjectAvailableStock.toLocaleString()} {issueForm.unit}
+                    </div>
+                    <div className="text-[10px] text-blue-600 font-bold">Max Allowed to Issue</div>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-black uppercase tracking-wider text-slate-700">
+                      Quantity to Issue (MT) <span className="text-rose-500">*</span>
+                    </label>
+                    {parseFloat(issueForm.quantity) > selectedProjectAvailableStock && (
+                      <span className="text-[11px] font-bold text-rose-600">
+                        Exceeds available balance!
+                      </span>
+                    )}
+                  </div>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    placeholder="e.g. 35.20"
+                    max={selectedProjectAvailableStock}
+                    value={issueForm.quantity}
+                    onChange={e => setIssueForm({ ...issueForm, quantity: e.target.value })}
+                    className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-black focus:outline-none transition-all ${parseFloat(issueForm.quantity) > selectedProjectAvailableStock
+                      ? 'bg-rose-50 border border-rose-300 text-rose-800'
+                      : 'bg-slate-50 border border-slate-200 text-slate-900 focus:border-blue-600 focus:bg-white'
+                      }`}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                      Outgoing Vehicle Number <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. UP-14-BT-9021"
+                      value={issueForm.vehicleNumber}
+                      onChange={e => setIssueForm({ ...issueForm, vehicleNumber: e.target.value.toUpperCase() })}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 uppercase"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                      Destination Site / Client
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Metro Casting Yard Block-4"
+                      value={issueForm.destinationLocation}
+                      onChange={e => setIssueForm({ ...issueForm, destinationLocation: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                      Driver Name & Contact
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Rajesh Kumar (+91...)"
+                      value={issueForm.driverName}
+                      onChange={e => setIssueForm({ ...issueForm, driverName: e.target.value })}
+                      className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                      Outward Waybill / Slip No.
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. WB-2026-9042"
+                      value={issueForm.waybillNumber}
+                      onChange={e => setIssueForm({ ...issueForm, waybillNumber: e.target.value })}
+                      className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                    />
+                  </div>
+                </div>
+
+                {/* Heavy Equipment Assignment (JCB, Loader, Excavator) */}
+                <EquipmentUsedPicker
+                  eligibleList={eligibleEquipment}
+                  selectedList={issueEquipment}
+                  onChange={setIssueEquipment}
+                  isOpen={isIssueEqOpen}
+                  onToggleOpen={() => setIsIssueEqOpen(!isIssueEqOpen)}
+                  operationType="Loading"
+                />
+
+                <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setIsIssueModalOpen(false)}
+                    disabled={isSubmitting}
+                    className="px-4 py-2 text-xs font-bold text-slate-600 bg-slate-100 rounded-xl"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting || parseFloat(issueForm.quantity) > selectedProjectAvailableStock}
+                    className="flex items-center gap-1.5 px-5 py-2 text-xs font-black uppercase tracking-wider text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-sm transition-all disabled:opacity-50"
+                  >
+                    Confirm Dispatch
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )
+      }
+
+      {/* MODAL: RECONCILIATION / WASTAGE & AUTOMATED BALANCE ENGINE */}
+      {
+        isAdjustModalOpen && selectedYard && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
+              <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-slate-100 text-slate-800 flex items-center justify-center font-bold border border-slate-200">
+                    <Split size={18} />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900 tracking-tight">Record Wastage or Stock Reconciliation</h3>
+                    <p className="text-xs text-slate-500">Record transit shrinkage, moisture loss, or physical audit adjustments</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsAdjustModalOpen(false)}
+                  className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <form onSubmit={handleRecordAdjustment} className="p-6 space-y-4">
+                {formError && (
+                  <div className="flex items-center gap-2 p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold rounded-xl">
+                    <AlertCircle size={15} className="shrink-0" />
+                    <span>{formError}</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                      Project <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      required
+                      value={adjustForm.projectId}
+                      onChange={e => {
+                        const pId = e.target.value;
+                        const match = projects.find(p => p.projectId === pId || p.id === pId);
+                        const projectMats = projectInventory.filter(p => p.projectId === pId);
                         setAdjustForm({
                           ...adjustForm,
-                          materialName: val,
-                          unit: mObj?.unit || 'MT',
-                          quantity: Math.abs(diff) > 0 ? String(Math.abs(diff)) : adjustForm.quantity,
-                          adjustmentType: diff < 0 ? 'ADJUSTMENT' : 'LOSS',
-                          reason: Math.abs(diff) > 0
-                            ? `Auto-reconciled gate balance variance: Verified Inward (${inQty} MT) vs Dispatched Outward (${outQty} MT)`
-                            : adjustForm.reason
+                          projectId: pId,
+                          projectName: match?.name || pId,
+                          materialName: projectMats[0]?.materialName || adjustForm.materialName
                         });
                       }}
                       className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 cursor-pointer"
                     >
-                      <option value="">Select Inward Material</option>
-                      {availableMats.map(m => (
-                        <option key={m} value={m}>{m}</option>
+                      <option value="">Select Project</option>
+                      {projects.map(p => (
+                        <option key={p.projectId || p.id} value={p.projectId || p.id}>
+                          {p.name}
+                        </option>
                       ))}
                     </select>
-                  );
-                }
+                  </div>
 
-                return (
+                  <div>
+                    <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                      Material (Matches Inward) <span className="text-rose-500">*</span>
+                    </label>
+                    {(() => {
+                      const availableMats = Array.from(new Set([
+                        ...(projectDetailData?.materials?.map(m => m.materialName) || []),
+                        ...(projectInventory.filter(p => p.projectId === adjustForm.projectId).map(p => p.materialName) || [])
+                      ].filter(Boolean)));
+
+                      if (availableMats.length > 0) {
+                        return (
+                          <select
+                            value={adjustForm.materialName}
+                            onChange={e => {
+                              const val = e.target.value;
+                              const mObj = projectDetailData?.materials.find(m => m.materialName === val);
+                              const inQty = mObj ? mObj.totalReceived : 0;
+                              const outQty = mObj ? mObj.totalIssued : 0;
+                              const lossQty = mObj ? (mObj.totalLoss + mObj.totalAdjustment) : 0;
+                              const diff = parseFloat((inQty - outQty - lossQty).toFixed(2));
+                              setAdjustForm({
+                                ...adjustForm,
+                                materialName: val,
+                                unit: mObj?.unit || 'MT',
+                                quantity: Math.abs(diff) > 0 ? String(Math.abs(diff)) : adjustForm.quantity,
+                                adjustmentType: diff < 0 ? 'ADJUSTMENT' : 'LOSS',
+                                reason: Math.abs(diff) > 0
+                                  ? `Auto-reconciled gate balance variance: Verified Inward (${inQty} MT) vs Dispatched Outward (${outQty} MT)`
+                                  : adjustForm.reason
+                              });
+                            }}
+                            className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 cursor-pointer"
+                          >
+                            <option value="">Select Inward Material</option>
+                            {availableMats.map(m => (
+                              <option key={m} value={m}>{m}</option>
+                            ))}
+                          </select>
+                        );
+                      }
+
+                      return (
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. Track Ballast 40mm"
+                          value={adjustForm.materialName}
+                          onChange={e => setAdjustForm({ ...adjustForm, materialName: e.target.value })}
+                          className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                        />
+                      );
+                    })()}
+                  </div>
+                </div>
+
+                {/* Live Inward vs Outward Auto-Calculation Box */}
+                {(() => {
+                  const currentMatObj = projectDetailData?.materials.find(m => m.materialName === adjustForm.materialName);
+                  const inward = currentMatObj ? currentMatObj.totalReceived : (projectDetailData?.metrics.totalReceived || 0);
+                  const outward = currentMatObj ? currentMatObj.totalIssued : (projectDetailData?.metrics.totalIssued || 0);
+                  const loss = currentMatObj ? (currentMatObj.totalLoss + currentMatObj.totalAdjustment) : (projectDetailData?.metrics.totalLoss || 0);
+                  const netVar = parseFloat((inward - outward - loss).toFixed(2));
+                  const isDeficit = netVar < 0;
+
+                  return (
+                    <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2.5">
+                      <div className="flex items-center justify-between text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                        <span className="flex items-center gap-1.5 text-slate-800">
+                          <Calculator size={14} className="text-[#00705a]" />
+                          <span>Calculated Stock Balance (Real-Time)</span>
+                        </span>
+                        <span>Unit: {adjustForm.unit || 'MT'}</span>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2 text-xs">
+                        <div className="bg-white p-2 rounded-xl border border-slate-200">
+                          <span className="text-[10px] text-slate-400 block font-semibold uppercase">Inward Gate</span>
+                          <strong className="text-slate-900 font-bold">{inward.toLocaleString()} MT</strong>
+                        </div>
+                        <div className="bg-white p-2 rounded-xl border border-slate-200">
+                          <span className="text-[10px] text-slate-400 block font-semibold uppercase">Outward Dispatched</span>
+                          <strong className="text-slate-900 font-bold">{outward.toLocaleString()} MT</strong>
+                        </div>
+                        <div className="bg-white p-2 rounded-xl border border-slate-200">
+                          <span className="text-[10px] text-slate-400 block font-semibold uppercase">Net Variance</span>
+                          <strong className={`font-bold ${isDeficit ? 'text-rose-600' : 'text-slate-900'}`}>
+                            {netVar.toLocaleString()} MT
+                          </strong>
+                        </div>
+                      </div>
+
+                      {Math.abs(netVar) > 0 && (
+                        <div className="flex items-center justify-between pt-1">
+                          <span className="text-[11px] text-slate-600">
+                            {isDeficit ? 'Dispatches exceed receipts by' : 'Surplus ground stock:'} <strong>{Math.abs(netVar).toLocaleString()} MT</strong>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAdjustForm(prev => ({
+                                ...prev,
+                                quantity: String(Math.abs(netVar)),
+                                adjustmentType: isDeficit ? 'ADJUSTMENT' : 'LOSS',
+                                reason: `Auto-reconciled gate balance variance: Verified Inward (${inward} MT) vs Dispatched Outward (${outward} MT)`
+                              }));
+                            }}
+                            className="text-[11px] font-bold text-[#00705a] hover:underline cursor-pointer flex items-center gap-1"
+                          >
+                            <span>Auto-Fill {Math.abs(netVar).toLocaleString()} MT</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                      Adjustment Type
+                    </label>
+                    <select
+                      value={adjustForm.adjustmentType}
+                      onChange={e => setAdjustForm({ ...adjustForm, adjustmentType: e.target.value as any })}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 cursor-pointer"
+                    >
+                      <option value="LOSS">Handling / Transit Moisture Loss (Deduction)</option>
+                      <option value="ADJUSTMENT">Stock Audit Correction (True-Up Adjustment)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                      Quantity (MT) <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      required
+                      placeholder="e.g. 1.85"
+                      value={adjustForm.quantity}
+                      onChange={e => setAdjustForm({ ...adjustForm, quantity: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                    Mandatory Audit Reason / Explanation <span className="text-rose-500">*</span>
+                  </label>
+                  <textarea
+                    required
+                    rows={2}
+                    placeholder="e.g. Weighbridge scale discrepancy & moisture shrinkage verified on arrival"
+                    value={adjustForm.reason}
+                    onChange={e => setAdjustForm({ ...adjustForm, reason: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#00705a] focus:bg-white"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setIsAdjustModalOpen(false)}
+                    disabled={isSubmitting}
+                    className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="flex items-center gap-1.5 px-5 py-2 text-xs font-bold uppercase tracking-wider text-white bg-[#00705a] hover:bg-[#005c4a] rounded-xl shadow-xs transition-all cursor-pointer active:scale-95"
+                  >
+                    Record Adjustment
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )
+      }
+
+      {/* ============================================================== */}
+      {/* MODAL: FAST TARE WEIGHBRIDGE SCALE & GATE-OUT                  */}
+      {/* ============================================================== */}
+      {
+        isFastTareModalOpen && fastTareTruck && (
+          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-5 animate-in fade-in zoom-in-95 duration-150">
+              <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-700 flex items-center justify-center">
+                    <Scale size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900">
+                      Weighbridge Gate-Out & Tare Check
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Scale 02 Confirmation for {fastTareTruck.vehicleNumber}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setIsFastTareModalOpen(false);
+                    setFastTareTruck(null);
+                  }}
+                  className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <form onSubmit={handleFastTareSubmit} className="space-y-4">
+                {/* Truck Info Card */}
+                <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 space-y-2 text-xs">
+                  <div className="flex justify-between font-bold">
+                    <span className="text-slate-500">Vehicle / Pilot:</span>
+                    <span className="text-slate-900 font-black">{fastTareTruck.vehicleNumber} ({fastTareTruck.driverName || 'Driver'})</span>
+                  </div>
+                  <div className="flex justify-between font-bold">
+                    <span className="text-slate-500">Project & Cargo:</span>
+                    <span className="text-slate-900">{fastTareTruck.projectName} • {fastTareTruck.materialName}</span>
+                  </div>
+                  <div className="flex justify-between font-bold">
+                    <span className="text-slate-500">Inward Gross Scale:</span>
+                    <span className="text-emerald-700 font-black text-sm">{fastTareTruck.grossWeight || '—'} MT</span>
+                  </div>
+                  <div className="flex justify-between font-bold">
+                    <span className="text-slate-500">Arrival Gate In-Time:</span>
+                    <span className="text-slate-700">
+                      {new Date(fastTareTruck.gateInTime || fastTareTruck.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Tare Input & Live Net Calculation */}
+                <div className="space-y-2">
+                  <label className="block text-xs font-black uppercase tracking-wider text-slate-700">
+                    Confirmed Tare Weight (MT) <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    placeholder="e.g. 14.50"
+                    value={fastTareWeight}
+                    onChange={e => setFastTareWeight(e.target.value)}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-base font-black text-slate-900 focus:outline-none focus:border-blue-600 focus:bg-white"
+                  />
+                </div>
+
+                {/* Live Net Weight Computation Box */}
+                {(() => {
+                  const gross = parseFloat(String(fastTareTruck.grossWeight || 0));
+                  const tare = parseFloat(fastTareWeight) || 0;
+                  const net = gross > 0 && tare > 0 && gross > tare ? (gross - tare).toFixed(2) : '0.00';
+
+                  return (
+                    <div className="bg-emerald-50 rounded-2xl p-4 border border-emerald-200 flex items-center justify-between">
+                      <div>
+                        <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 block">
+                          Net Delivered Payload
+                        </span>
+                        <span className="text-2xl font-black text-[#00705a]">
+                          {net} <span className="text-xs font-bold">MT</span>
+                        </span>
+                      </div>
+                      <div className="text-right text-[11px] text-emerald-800 font-bold">
+                        <div>G: {gross} MT</div>
+                        <div>T: {tare} MT</div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                    Scale Operator Remarks
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Tare verified without fuel replenishment, gate pass signed"
+                    value={fastTareRemarks}
+                    onChange={e => setFastTareRemarks(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-blue-600"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setIsFastTareModalOpen(false)}
+                    disabled={isSubmitting}
+                    className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 bg-slate-100 rounded-xl"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="flex items-center gap-1.5 px-6 py-2.5 text-xs font-black uppercase tracking-wider text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-sm transition-all"
+                  >
+                    <CheckCircle2 size={16} />
+                    <span>Confirm Tare & Clear Gate-Out</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )
+      }
+
+      {/* ============================================================== */}
+      {/* MODAL: DIGITAL TWIN NODE TELEMETRY INSPECTOR                   */}
+      {/* ============================================================== */}
+      {
+        selectedDigitalTwinNode && (
+          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-5 animate-in fade-in zoom-in-95 duration-150">
+              <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-700 flex items-center justify-center">
+                    <Box size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900">
+                      Storage Node Telemetry
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      {selectedDigitalTwinNode.rackCode} • {selectedDigitalTwinNode.rackName}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setSelectedDigitalTwinNode(null)}
+                  className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                    <span className="text-[10px] font-black uppercase text-slate-400 block">Location Type</span>
+                    <strong className="text-sm font-black text-slate-900">{selectedDigitalTwinNode.locationType}</strong>
+                  </div>
+                  <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                    <span className="text-[10px] font-black uppercase text-slate-400 block">Total Capacity</span>
+                    <strong className="text-sm font-black text-slate-900">{selectedDigitalTwinNode.capacityTons.toLocaleString()} MT</strong>
+                  </div>
+                </div>
+
+                {/* Stored Inventory Breakdown */}
+                <div>
+                  <h4 className="text-xs font-black uppercase tracking-wider text-slate-700 mb-2">
+                    Materials Currently Stored in this Node
+                  </h4>
+                  {(() => {
+                    const items = rackInventory.filter(
+                      r => r.rackName.toLowerCase() === selectedDigitalTwinNode.rackName.toLowerCase() || r.rackCode === selectedDigitalTwinNode.rackCode
+                    );
+
+                    if (items.length === 0) {
+                      return (
+                        <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-center text-slate-400 text-xs">
+                          This storage location currently has 0 MT stored (100% free capacity).
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="space-y-2">
+                        {items.map((it, idx) => (
+                          <div key={idx} className="p-3 bg-slate-50 rounded-2xl border border-slate-200 flex items-center justify-between text-xs">
+                            <div>
+                              <div className="font-black text-slate-900">{it.materialName}</div>
+                              <div className="text-[10px] text-slate-400">{it.projectName}</div>
+                            </div>
+                            <div className="text-right font-black text-[#00705a]">
+                              {it.currentAvailable.toLocaleString()} {it.unit || 'MT'}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                <div className="flex items-center gap-2 pt-4 border-t border-slate-100">
+                  <button
+                    onClick={() => {
+                      const nodeName = selectedDigitalTwinNode.rackName;
+                      setSelectedDigitalTwinNode(null);
+                      handleOpenShiftModal(undefined, nodeName);
+                    }}
+                    className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-wider shadow-sm transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <ArrowLeftRight size={14} />
+                    <span>Shift From Here</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      const nodeName = selectedDigitalTwinNode.rackName;
+                      const nodeId = selectedDigitalTwinNode.id;
+                      setSelectedDigitalTwinNode(null);
+                      setStockAddForm(prev => ({
+                        ...prev,
+                        rackId: String(nodeId),
+                        rackName: nodeName
+                      }));
+                      setViewMode('deep-stock-add');
+                    }}
+                    className="flex-1 py-2.5 rounded-xl bg-[#00705a] hover:bg-[#005a48] text-white text-xs font-black uppercase tracking-wider shadow-sm transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <ArrowDownLeft size={14} />
+                    <span>Inward Stock Here</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+      {/* MODAL: LOG STANDALONE EQUIPMENT ACTIVITY */}
+      {isLogEqModalOpen && selectedYard && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
+            <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-emerald-50/50 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
+                  <Wrench size={18} />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 tracking-tight">Log Heavy Equipment Activity</h3>
+                  <p className="text-xs text-slate-500">Record machine runtime and material handling in {selectedYard.yardName}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsLogEqModalOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveManualEquipmentLog} className="p-6 space-y-4 overflow-y-auto">
+              {formError && (
+                <div className="flex items-center gap-2 p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold rounded-xl animate-shake">
+                  <AlertCircle size={15} className="shrink-0" />
+                  <span>{formError}</span>
+                </div>
+              )}
+
+              {/* Machine Selection */}
+              <div>
+                <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                  Select Heavy Machinery <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  required
+                  value={logEqForm.equipmentNumber}
+                  onChange={e => {
+                    const val = e.target.value;
+                    const match = eligibleEquipment.find(eq => eq.equipmentNumber === val || eq.equipmentId === val);
+                    setLogEqForm({
+                      ...logEqForm,
+                      equipmentNumber: val,
+                      operatorName: match?.assignedOperatorName || logEqForm.operatorName,
+                      operatorPhone: match?.assignedOperatorPhone || logEqForm.operatorPhone
+                    });
+                  }}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 cursor-pointer"
+                >
+                  <option value="">Choose Machine (JCB, Loader, Excavator, Forklift)...</option>
+                  {eligibleEquipment.map(eq => (
+                    <option
+                      key={eq.id}
+                      value={eq.equipmentNumber}
+                      disabled={eq.status === 'Under Maintenance'}
+                    >
+                      {eq.equipmentNumber} — {eq.equipmentType} {eq.make ? `(${eq.make} ${eq.model || ''})` : ''} [{eq.status}]
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Operation & Project */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                    Operation Type <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={logEqForm.operationType}
+                    onChange={e => setLogEqForm({ ...logEqForm, operationType: e.target.value as any })}
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 cursor-pointer"
+                  >
+                    <option value="UNLOADING">Material Unloading</option>
+                    <option value="LOADING">Material Loading</option>
+                    <option value="INTERNAL_SHIFT">Internal Rack Shifting</option>
+                    <option value="OTHER">Other Yard Handling</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                    Project
+                  </label>
+                  <select
+                    value={logEqForm.projectId}
+                    onChange={e => {
+                      const pId = e.target.value;
+                      const match = projects.find(p => p.projectId === pId || p.id === pId);
+                      setLogEqForm({
+                        ...logEqForm,
+                        projectId: pId,
+                        projectName: match?.name || pId
+                      });
+                    }}
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 cursor-pointer"
+                  >
+                    <option value="">General / No Project</option>
+                    {projects.map(p => (
+                      <option key={p.id} value={p.projectId || p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Material & Quantity */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                    Material Handled
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Track Ballast 40mm"
+                    value={logEqForm.materialName}
+                    onChange={e => setLogEqForm({ ...logEqForm, materialName: e.target.value })}
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                    Quantity (MT)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    placeholder="20.0"
+                    value={logEqForm.quantity}
+                    onChange={e => setLogEqForm({ ...logEqForm, quantity: e.target.value })}
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                  />
+                </div>
+              </div>
+
+              {/* Location */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                    Source Location / Rack
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Siding Bay A1"
+                    value={logEqForm.sourceRackName}
+                    onChange={e => setLogEqForm({ ...logEqForm, sourceRackName: e.target.value })}
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                    Destination Bay / Vehicle
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Outward Road Tipper"
+                    value={logEqForm.destinationRackName}
+                    onChange={e => setLogEqForm({ ...logEqForm, destinationRackName: e.target.value })}
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                  />
+                </div>
+              </div>
+
+              {/* Timestamps & Auto Duration */}
+              <div className="grid grid-cols-3 gap-2.5">
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-wider text-slate-700 mb-1">
+                    Start Time
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={logEqForm.startTime}
+                    onChange={e => {
+                      const s = e.target.value;
+                      const sT = new Date(s).getTime();
+                      const eT = new Date(logEqForm.endTime).getTime();
+                      let dur = logEqForm.durationHours;
+                      if (!isNaN(sT) && !isNaN(eT) && eT > sT) {
+                        dur = String(parseFloat(((eT - sT) / 3600000).toFixed(2)));
+                      }
+                      setLogEqForm({ ...logEqForm, startTime: s, durationHours: dur });
+                    }}
+                    className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-wider text-slate-700 mb-1">
+                    End Time
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={logEqForm.endTime}
+                    onChange={e => {
+                      const end = e.target.value;
+                      const sT = new Date(logEqForm.startTime).getTime();
+                      const eT = new Date(end).getTime();
+                      let dur = logEqForm.durationHours;
+                      if (!isNaN(sT) && !isNaN(eT) && eT > sT) {
+                        dur = String(parseFloat(((eT - sT) / 3600000).toFixed(2)));
+                      }
+                      setLogEqForm({ ...logEqForm, endTime: end, durationHours: dur });
+                    }}
+                    className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-wider text-slate-700 mb-1">
+                    Operating Hours
+                  </label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0.1"
+                    value={logEqForm.durationHours}
+                    onChange={e => setLogEqForm({ ...logEqForm, durationHours: e.target.value })}
+                    className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black text-emerald-800"
+                  />
+                </div>
+              </div>
+
+              {/* Operator Name & Phone */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                    Operator / Driver Name
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Ramesh Yadav"
+                    value={logEqForm.operatorName}
+                    onChange={e => setLogEqForm({ ...logEqForm, operatorName: e.target.value })}
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                    Operator Phone
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. +91 98112 33445"
+                    value={logEqForm.operatorPhone}
+                    onChange={e => setLogEqForm({ ...logEqForm, operatorPhone: e.target.value })}
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                  />
+                </div>
+              </div>
+
+              {/* Remarks */}
+              <div>
+                <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                  Activity Remarks
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Stockpile reshaping and apron leveling"
+                  value={logEqForm.remarks}
+                  onChange={e => setLogEqForm({ ...logEqForm, remarks: e.target.value })}
+                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsLogEqModalOpen(false)}
+                  disabled={isSubmitting}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="flex items-center gap-1.5 px-5 py-2 text-xs font-black uppercase tracking-wider text-white bg-[#00705a] hover:bg-[#005a48] rounded-xl shadow-sm transition-all disabled:opacity-50"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <RefreshCw size={14} className="animate-spin" />
+                      <span>Logging...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check size={14} />
+                      <span>Confirm Log Activity</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* DEDICATED RECEIVE VEHICLE & RAIL WAGON MODAL */}
+      {isReceiveVehicleModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-4xl max-h-[92vh] overflow-hidden flex flex-col my-auto animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-slate-900 to-[#03261f] text-white">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-white/10 rounded-2xl border border-white/10 text-emerald-300">
+                  {receiveVehicleForm.transportMode === 'RAIL_RAKE' ? <Train size={24} /> : <Truck size={24} />}
+                </div>
+                <div>
+                  <h3 className="text-base font-black uppercase tracking-wider flex items-center gap-2">
+                    <span>Receive Vehicle & Rail Wagon (Weighbridge Inward)</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                      Live Gate Entry
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-300 mt-0.5">
+                    Log vehicle/wagon weighment, stock addition, and real-time project balance calculation
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsReceiveVehicleModalOpen(false)}
+                className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Modal Form Body */}
+            <form onSubmit={handleSubmitReceiveVehicle} className="p-6 space-y-6 overflow-y-auto flex-1">
+              {/* Carrier Mode Selection */}
+              <div>
+                <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-2">
+                  1. Transport Mode & Carrier Class
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReceiveVehicleMode('TRUCK');
+                      setReceiveVehicleForm(prev => ({
+                        ...prev,
+                        transportMode: 'TRUCK',
+                        vehicleNumber: DEFAULT_ROAD_VEHICLES[0].vehicleNumber,
+                        vehicleType: DEFAULT_ROAD_VEHICLES[0].vehicleType,
+                        driverName: DEFAULT_ROAD_VEHICLES[0].driverName,
+                        driverPhone: DEFAULT_ROAD_VEHICLES[0].driverPhone,
+                        grossWeight: '52.40',
+                        tareWeight: '17.20',
+                        netWeight: '35.20'
+                      }));
+                    }}
+                    className={`p-3.5 rounded-2xl border flex items-center gap-3 transition-all cursor-pointer ${
+                      receiveVehicleForm.transportMode === 'TRUCK'
+                        ? 'border-[#00705a] bg-emerald-50/60 ring-2 ring-[#00705a]/20 shadow-xs'
+                        : 'border-slate-200 bg-white hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className={`p-2 rounded-xl ${receiveVehicleForm.transportMode === 'TRUCK' ? 'bg-[#00705a] text-white' : 'bg-slate-100 text-slate-600'}`}>
+                      <Truck size={20} />
+                    </div>
+                    <div className="text-left">
+                      <div className="text-xs font-black text-slate-900">Road Haulage Vehicle</div>
+                      <div className="text-[11px] text-slate-500 font-medium">Commercial Tippers, Dumpers & Trailers (25T - 40T)</div>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReceiveVehicleMode('RAIL_RAKE');
+                      setReceiveVehicleForm(prev => ({
+                        ...prev,
+                        transportMode: 'RAIL_RAKE',
+                        vehicleNumber: DEFAULT_RAIL_WAGONS[0].vehicleNumber,
+                        vehicleType: DEFAULT_RAIL_WAGONS[0].vehicleType,
+                        driverName: DEFAULT_RAIL_WAGONS[0].driverName,
+                        driverPhone: DEFAULT_RAIL_WAGONS[0].driverPhone,
+                        grossWeight: '88.50',
+                        tareWeight: '27.50',
+                        netWeight: '61.00'
+                      }));
+                    }}
+                    className={`p-3.5 rounded-2xl border flex items-center gap-3 transition-all cursor-pointer ${
+                      receiveVehicleForm.transportMode === 'RAIL_RAKE'
+                        ? 'border-indigo-600 bg-indigo-50/60 ring-2 ring-indigo-600/20 shadow-xs'
+                        : 'border-slate-200 bg-white hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className={`p-2 rounded-xl ${receiveVehicleForm.transportMode === 'RAIL_RAKE' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                      <Train size={20} />
+                    </div>
+                    <div className="text-left">
+                      <div className="text-xs font-black text-slate-900">Railway Freight Wagon / Rake</div>
+                      <div className="text-[11px] text-slate-500 font-medium">BOXN, BOXNHL & BCNHL Siding Wagons (55T - 65T)</div>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              {/* Quick Fleet Vehicle / Wagon Selector */}
+              <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-black uppercase tracking-wider text-slate-800">
+                      2. Select Assigned {receiveVehicleForm.transportMode === 'RAIL_RAKE' ? 'Rail Wagon' : 'Fleet Vehicle'}
+                    </span>
+                    <span className="text-[11px] text-slate-500 font-medium">(or enter custom registration below)</span>
+                  </div>
+
+                  <div className="relative sm:w-56">
+                    <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search roster..."
+                      value={receiveVehicleSearch}
+                      onChange={e => setReceiveVehicleSearch(e.target.value)}
+                      className="w-full pl-8 pr-3 py-1 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Available vehicles chips/grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 max-h-40 overflow-y-auto pr-1">
+                  {(receiveVehicleForm.transportMode === 'RAIL_RAKE'
+                    ? DEFAULT_RAIL_WAGONS
+                    : [
+                        ...(availableVehicles.length > 0
+                          ? availableVehicles.map(v => ({
+                              vehicleNumber: v.vehicleNumber,
+                              vehicleType: v.vehicleType || `${v.make || 'Fleet'} Tipper`,
+                              payloadCapacity: parseFloat(String(v.payloadCapacity || v.capacity || 35)),
+                              driverName: v.driverName || 'Designated Driver',
+                              driverPhone: v.driverPhone || '+91 94370 00000'
+                            }))
+                          : []),
+                        ...DEFAULT_ROAD_VEHICLES
+                      ]
+                  )
+                    .filter(v => {
+                      const q = receiveVehicleSearch.toLowerCase();
+                      return !q || v.vehicleNumber.toLowerCase().includes(q) || v.vehicleType.toLowerCase().includes(q) || (v.driverName || '').toLowerCase().includes(q);
+                    })
+                    .slice(0, 9)
+                    .map((item, idx) => {
+                      const isSelected = receiveVehicleForm.vehicleNumber.toUpperCase() === item.vehicleNumber.toUpperCase();
+                      return (
+                        <div
+                          key={idx}
+                          onClick={() => {
+                            const estTare = receiveVehicleForm.transportMode === 'RAIL_RAKE' ? 27.5 : 17.2;
+                            const estNet = item.payloadCapacity || (receiveVehicleForm.transportMode === 'RAIL_RAKE' ? 61.0 : 35.2);
+                            const estGross = parseFloat((estTare + estNet).toFixed(2));
+                            setReceiveVehicleForm(prev => ({
+                              ...prev,
+                              vehicleNumber: item.vehicleNumber,
+                              vehicleType: item.vehicleType,
+                              driverName: item.driverName || prev.driverName,
+                              driverPhone: item.driverPhone || prev.driverPhone,
+                              grossWeight: String(estGross),
+                              tareWeight: String(estTare),
+                              netWeight: String(estNet)
+                            }));
+                          }}
+                          className={`p-2.5 rounded-xl border text-xs cursor-pointer transition-all flex items-start justify-between gap-1.5 ${
+                            isSelected
+                              ? 'bg-emerald-50 border-[#00705a] ring-2 ring-[#00705a]/20 shadow-2xs'
+                              : 'bg-white border-slate-200 hover:border-slate-300'
+                          }`}
+                        >
+                          <div>
+                            <div className="font-mono font-black text-slate-900 tracking-wider text-[11px] flex items-center gap-1">
+                              {receiveVehicleForm.transportMode === 'RAIL_RAKE' ? <Train size={11} className="text-indigo-600" /> : <Truck size={11} className="text-[#00705a]" />}
+                              <span>{item.vehicleNumber}</span>
+                            </div>
+                            <div className="text-[10px] text-slate-500 font-medium truncate mt-0.5">{item.vehicleType}</div>
+                            {item.driverName && (
+                              <div className="text-[9px] text-slate-400 mt-0.5 truncate">Pilot: {item.driverName}</div>
+                            )}
+                          </div>
+                          <span className="shrink-0 text-[10px] font-black px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded-md">
+                            ~{item.payloadCapacity}T
+                          </span>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+
+              {/* Form Fields Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Vehicle Number & Type */}
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                    {receiveVehicleForm.transportMode === 'RAIL_RAKE' ? 'Wagon No. / Rake ID' : 'Vehicle Plate No.'} <span className="text-rose-500">*</span>
+                  </label>
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Track Ballast 40mm"
-                    value={adjustForm.materialName}
-                    onChange={e => setAdjustForm({ ...adjustForm, materialName: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                    placeholder={receiveVehicleForm.transportMode === 'RAIL_RAKE' ? 'e.g. BOXN-94102' : 'e.g. OD-05-BB-8921'}
+                    value={receiveVehicleForm.vehicleNumber}
+                    onChange={e => setReceiveVehicleForm({ ...receiveVehicleForm, vehicleNumber: e.target.value.toUpperCase() })}
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-black text-slate-900 tracking-wider"
                   />
-                );
-              })()}
-            </div>
-          </div>
-
-          {/* Live Inward vs Outward Auto-Calculation Box */}
-          {(() => {
-            const currentMatObj = projectDetailData?.materials.find(m => m.materialName === adjustForm.materialName);
-            const inward = currentMatObj ? currentMatObj.totalReceived : (projectDetailData?.metrics.totalReceived || 0);
-            const outward = currentMatObj ? currentMatObj.totalIssued : (projectDetailData?.metrics.totalIssued || 0);
-            const loss = currentMatObj ? (currentMatObj.totalLoss + currentMatObj.totalAdjustment) : (projectDetailData?.metrics.totalLoss || 0);
-            const netVar = parseFloat((inward - outward - loss).toFixed(2));
-            const isDeficit = netVar < 0;
-
-            return (
-              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2.5">
-                <div className="flex items-center justify-between text-[11px] font-bold text-slate-600 uppercase tracking-wider">
-                  <span className="flex items-center gap-1.5 text-slate-800">
-                    <Calculator size={14} className="text-[#00705a]" />
-                    <span>Calculated Stock Balance (Real-Time)</span>
-                  </span>
-                  <span>Unit: {adjustForm.unit || 'MT'}</span>
                 </div>
 
-                <div className="grid grid-cols-3 gap-2 text-xs">
-                  <div className="bg-white p-2 rounded-xl border border-slate-200">
-                    <span className="text-[10px] text-slate-400 block font-semibold uppercase">Inward Gate</span>
-                    <strong className="text-slate-900 font-bold">{inward.toLocaleString()} MT</strong>
-                  </div>
-                  <div className="bg-white p-2 rounded-xl border border-slate-200">
-                    <span className="text-[10px] text-slate-400 block font-semibold uppercase">Outward Dispatched</span>
-                    <strong className="text-slate-900 font-bold">{outward.toLocaleString()} MT</strong>
-                  </div>
-                  <div className="bg-white p-2 rounded-xl border border-slate-200">
-                    <span className="text-[10px] text-slate-400 block font-semibold uppercase">Net Variance</span>
-                    <strong className={`font-bold ${isDeficit ? 'text-rose-600' : 'text-slate-900'}`}>
-                      {netVar.toLocaleString()} MT
-                    </strong>
-                  </div>
-                </div>
-
-                {Math.abs(netVar) > 0 && (
-                  <div className="flex items-center justify-between pt-1">
-                    <span className="text-[11px] text-slate-600">
-                      {isDeficit ? 'Dispatches exceed receipts by' : 'Surplus ground stock:'} <strong>{Math.abs(netVar).toLocaleString()} MT</strong>
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAdjustForm(prev => ({
-                          ...prev,
-                          quantity: String(Math.abs(netVar)),
-                          adjustmentType: isDeficit ? 'ADJUSTMENT' : 'LOSS',
-                          reason: `Auto-reconciled gate balance variance: Verified Inward (${inward} MT) vs Dispatched Outward (${outward} MT)`
-                        }));
-                      }}
-                      className="text-[11px] font-bold text-[#00705a] hover:underline cursor-pointer flex items-center gap-1"
-                    >
-                      <span>Auto-Fill {Math.abs(netVar).toLocaleString()} MT</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-                Adjustment Type
-              </label>
-              <select
-                value={adjustForm.adjustmentType}
-                onChange={e => setAdjustForm({ ...adjustForm, adjustmentType: e.target.value as any })}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 cursor-pointer"
-              >
-                <option value="LOSS">Handling / Transit Moisture Loss (Deduction)</option>
-                <option value="ADJUSTMENT">Stock Audit Correction (True-Up Adjustment)</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-                Quantity (MT) <span className="text-rose-500">*</span>
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                required
-                placeholder="e.g. 1.85"
-                value={adjustForm.quantity}
-                onChange={e => setAdjustForm({ ...adjustForm, quantity: e.target.value })}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-              Mandatory Audit Reason / Explanation <span className="text-rose-500">*</span>
-            </label>
-            <textarea
-              required
-              rows={2}
-              placeholder="e.g. Weighbridge scale discrepancy & moisture shrinkage verified on arrival"
-              value={adjustForm.reason}
-              onChange={e => setAdjustForm({ ...adjustForm, reason: e.target.value })}
-              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-[#00705a] focus:bg-white"
-            />
-          </div>
-
-          <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-100">
-            <button
-              type="button"
-              onClick={() => setIsAdjustModalOpen(false)}
-              disabled={isSubmitting}
-              className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="flex items-center gap-1.5 px-5 py-2 text-xs font-bold uppercase tracking-wider text-white bg-[#00705a] hover:bg-[#005c4a] rounded-xl shadow-xs transition-all cursor-pointer active:scale-95"
-            >
-              Record Adjustment
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-}
-
-{/* ============================================================== */ }
-{/* MODAL: FAST TARE WEIGHBRIDGE SCALE & GATE-OUT                  */ }
-{/* ============================================================== */ }
-{
-  isFastTareModalOpen && fastTareTruck && (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-5 animate-in fade-in zoom-in-95 duration-150">
-        <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-700 flex items-center justify-center">
-              <Scale size={20} />
-            </div>
-            <div>
-              <h3 className="text-base font-black text-slate-900">
-                Weighbridge Gate-Out & Tare Check
-              </h3>
-              <p className="text-xs text-slate-400">
-                Scale 02 Confirmation for {fastTareTruck.vehicleNumber}
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={() => {
-              setIsFastTareModalOpen(false);
-              setFastTareTruck(null);
-            }}
-            className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500"
-          >
-            <X size={16} />
-          </button>
-        </div>
-
-        <form onSubmit={handleFastTareSubmit} className="space-y-4">
-          {/* Truck Info Card */}
-          <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 space-y-2 text-xs">
-            <div className="flex justify-between font-bold">
-              <span className="text-slate-500">Vehicle / Pilot:</span>
-              <span className="text-slate-900 font-black">{fastTareTruck.vehicleNumber} ({fastTareTruck.driverName || 'Driver'})</span>
-            </div>
-            <div className="flex justify-between font-bold">
-              <span className="text-slate-500">Project & Cargo:</span>
-              <span className="text-slate-900">{fastTareTruck.projectName} • {fastTareTruck.materialName}</span>
-            </div>
-            <div className="flex justify-between font-bold">
-              <span className="text-slate-500">Inward Gross Scale:</span>
-              <span className="text-emerald-700 font-black text-sm">{fastTareTruck.grossWeight || '—'} MT</span>
-            </div>
-            <div className="flex justify-between font-bold">
-              <span className="text-slate-500">Arrival Gate In-Time:</span>
-              <span className="text-slate-700">
-                {new Date(fastTareTruck.gateInTime || fastTareTruck.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </span>
-            </div>
-          </div>
-
-          {/* Tare Input & Live Net Calculation */}
-          <div className="space-y-2">
-            <label className="block text-xs font-black uppercase tracking-wider text-slate-700">
-              Confirmed Tare Weight (MT) <span className="text-rose-500">*</span>
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              required
-              placeholder="e.g. 14.50"
-              value={fastTareWeight}
-              onChange={e => setFastTareWeight(e.target.value)}
-              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-base font-black text-slate-900 focus:outline-none focus:border-blue-600 focus:bg-white"
-            />
-          </div>
-
-          {/* Live Net Weight Computation Box */}
-          {(() => {
-            const gross = parseFloat(String(fastTareTruck.grossWeight || 0));
-            const tare = parseFloat(fastTareWeight) || 0;
-            const net = gross > 0 && tare > 0 && gross > tare ? (gross - tare).toFixed(2) : '0.00';
-
-            return (
-              <div className="bg-emerald-50 rounded-2xl p-4 border border-emerald-200 flex items-center justify-between">
+                {/* Storage Rack Bay */}
                 <div>
-                  <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 block">
-                    Net Delivered Payload
-                  </span>
-                  <span className="text-2xl font-black text-[#00705a]">
-                    {net} <span className="text-xs font-bold">MT</span>
-                  </span>
+                  <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                    Designated Storage Rack / Stack <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={receiveVehicleForm.rackName}
+                    onChange={e => {
+                      const match = racks.find(r => r.rackName === e.target.value);
+                      setReceiveVehicleForm({
+                        ...receiveVehicleForm,
+                        rackName: e.target.value,
+                        rackId: match ? String(match.id) : ''
+                      });
+                    }}
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 cursor-pointer"
+                  >
+                    <option value="">Select Rack / Bay</option>
+                    {racks.map(r => (
+                      <option key={r.id} value={r.rackName}>
+                        {r.rackName} ({r.rackCode}) — Cap: {r.capacityTons || 10000} MT
+                      </option>
+                    ))}
+                  </select>
                 </div>
-                <div className="text-right text-[11px] text-emerald-800 font-bold">
-                  <div>G: {gross} MT</div>
-                  <div>T: {tare} MT</div>
+
+                {/* Driver / Loco Pilot & Contact */}
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                    Driver / Loco Pilot Name
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Rajesh Kumar Swain"
+                    value={receiveVehicleForm.driverName}
+                    onChange={e => setReceiveVehicleForm({ ...receiveVehicleForm, driverName: e.target.value })}
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                    Driver Phone Contact
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. +91 94371 88921"
+                    value={receiveVehicleForm.driverPhone}
+                    onChange={e => setReceiveVehicleForm({ ...receiveVehicleForm, driverPhone: e.target.value })}
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                  />
+                </div>
+
+                {/* Project Allocation */}
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                    Target Project Allocation <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={receiveVehicleForm.projectId}
+                    onChange={e => {
+                      const pId = e.target.value;
+                      const match = projects.find(p => p.projectId === pId || p.id === pId);
+                      setReceiveVehicleForm({
+                        ...receiveVehicleForm,
+                        projectId: pId,
+                        projectName: match?.name || pId,
+                        materialName: match?.commodity || receiveVehicleForm.materialName
+                      });
+                    }}
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 cursor-pointer"
+                  >
+                    {projects.map(p => (
+                      <option key={p.id} value={p.projectId || p.id}>
+                        {p.name} ({p.projectId || p.id})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Commodity / Material */}
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                    Material / Commodity <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Track Ballast 40mm (RDSO)"
+                    value={receiveVehicleForm.materialName}
+                    onChange={e => setReceiveVehicleForm({ ...receiveVehicleForm, materialName: e.target.value })}
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                  />
+                </div>
+
+                {/* Origin / Consignor */}
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                    Origin Pit / Siding Location
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Rewa Quarry Pit Face 04"
+                    value={receiveVehicleForm.sourceLocation}
+                    onChange={e => setReceiveVehicleForm({ ...receiveVehicleForm, sourceLocation: e.target.value })}
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
+                    Consignor / Supplier Organization
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. National Mineral Quarry Division"
+                    value={receiveVehicleForm.supplierName}
+                    onChange={e => setReceiveVehicleForm({ ...receiveVehicleForm, supplierName: e.target.value })}
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
+                  />
                 </div>
               </div>
-            );
-          })()}
 
-          <div>
-            <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-              Scale Operator Remarks
-            </label>
-            <input
-              type="text"
-              placeholder="e.g. Tare verified without fuel replenishment, gate pass signed"
-              value={fastTareRemarks}
-              onChange={e => setFastTareRemarks(e.target.value)}
-              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-blue-600"
-            />
-          </div>
-
-          <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-100">
-            <button
-              type="button"
-              onClick={() => setIsFastTareModalOpen(false)}
-              disabled={isSubmitting}
-              className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 bg-slate-100 rounded-xl"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="flex items-center gap-1.5 px-6 py-2.5 text-xs font-black uppercase tracking-wider text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-sm transition-all"
-            >
-              <CheckCircle2 size={16} />
-              <span>Confirm Tare & Clear Gate-Out</span>
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-}
-
-{/* ============================================================== */ }
-{/* MODAL: DIGITAL TWIN NODE TELEMETRY INSPECTOR                   */ }
-{/* ============================================================== */ }
-{
-  selectedDigitalTwinNode && (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-5 animate-in fade-in zoom-in-95 duration-150">
-        <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-700 flex items-center justify-center">
-              <Box size={20} />
-            </div>
-            <div>
-              <h3 className="text-base font-black text-slate-900">
-                Storage Node Telemetry
-              </h3>
-              <p className="text-xs text-slate-400">
-                {selectedDigitalTwinNode.rackCode} • {selectedDigitalTwinNode.rackName}
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={() => setSelectedDigitalTwinNode(null)}
-            className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500"
-          >
-            <X size={16} />
-          </button>
-        </div>
-
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-3 text-xs">
-            <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200">
-              <span className="text-[10px] font-black uppercase text-slate-400 block">Location Type</span>
-              <strong className="text-sm font-black text-slate-900">{selectedDigitalTwinNode.locationType}</strong>
-            </div>
-            <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200">
-              <span className="text-[10px] font-black uppercase text-slate-400 block">Total Capacity</span>
-              <strong className="text-sm font-black text-slate-900">{selectedDigitalTwinNode.capacityTons.toLocaleString()} MT</strong>
-            </div>
-          </div>
-
-          {/* Stored Inventory Breakdown */}
-          <div>
-            <h4 className="text-xs font-black uppercase tracking-wider text-slate-700 mb-2">
-              Materials Currently Stored in this Node
-            </h4>
-            {(() => {
-              const items = rackInventory.filter(
-                r => r.rackName.toLowerCase() === selectedDigitalTwinNode.rackName.toLowerCase() || r.rackCode === selectedDigitalTwinNode.rackCode
-              );
-
-              if (items.length === 0) {
-                return (
-                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-center text-slate-400 text-xs">
-                    This storage location currently has 0 MT stored (100% free capacity).
+              {/* Weighbridge Weights Section */}
+              <div className="p-4 bg-emerald-50/50 rounded-2xl border border-emerald-200/80 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-[#00705a]">
+                    <Scale size={16} />
+                    <span>3. Weighbridge Measurements & Delivered Stock Calculation</span>
                   </div>
-                );
-              }
+                  <span className="text-[11px] font-bold text-emerald-800">
+                    Slip: {receiveVehicleForm.weighbridgeSlipNumber}
+                  </span>
+                </div>
 
-              return (
-                <div className="space-y-2">
-                  {items.map((it, idx) => (
-                    <div key={idx} className="p-3 bg-slate-50 rounded-2xl border border-slate-200 flex items-center justify-between text-xs">
-                      <div>
-                        <div className="font-black text-slate-900">{it.materialName}</div>
-                        <div className="text-[10px] text-slate-400">{it.projectName}</div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-black uppercase tracking-wider text-slate-700 mb-1">
+                      Gross Weight (MT) <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      required
+                      placeholder="e.g. 52.40"
+                      value={receiveVehicleForm.grossWeight}
+                      onChange={e => {
+                        const g = parseFloat(e.target.value) || 0;
+                        const t = parseFloat(receiveVehicleForm.tareWeight) || 0;
+                        const net = g > t ? (g - t).toFixed(2) : '0.00';
+                        setReceiveVehicleForm({ ...receiveVehicleForm, grossWeight: e.target.value, netWeight: net });
+                      }}
+                      className="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-xs font-black text-slate-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-black uppercase tracking-wider text-slate-700 mb-1">
+                      Tare Weight (MT) <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      required
+                      placeholder="e.g. 17.20"
+                      value={receiveVehicleForm.tareWeight}
+                      onChange={e => {
+                        const t = parseFloat(e.target.value) || 0;
+                        const g = parseFloat(receiveVehicleForm.grossWeight) || 0;
+                        const net = g > t ? (g - t).toFixed(2) : '0.00';
+                        setReceiveVehicleForm({ ...receiveVehicleForm, tareWeight: e.target.value, netWeight: net });
+                      }}
+                      className="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-xs font-black text-slate-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-black uppercase tracking-wider text-[#00705a] mb-1">
+                      Net Stock Added (MT)
+                    </label>
+                    <div className="w-full px-3.5 py-2 bg-emerald-100/70 border border-emerald-300 rounded-xl text-xs font-black text-[#00705a] flex items-center justify-between">
+                      <span>{receiveVehicleForm.netWeight || '0.00'} MT</span>
+                      <span className="text-[10px] font-bold text-emerald-700">Auto Computed</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* LIVE PROJECT BALANCE COUNTDOWN PREVIEW */}
+              {(() => {
+                const thisDeliveryNet = parseFloat(receiveVehicleForm.netWeight) || 0;
+                const newTotalReceived = parseFloat((totalReceiptsWeight + thisDeliveryNet).toFixed(2));
+                const newRemainingBalance = Math.max(0, parseFloat((projectScopeWeight - newTotalReceived).toFixed(2)));
+                const newProgressPct = projectScopeWeight > 0 ? Math.min(100, parseFloat(((newTotalReceived / projectScopeWeight) * 100).toFixed(1))) : 0;
+
+                return (
+                  <div className="p-4 bg-slate-900 rounded-2xl text-white space-y-3 border border-slate-800">
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs font-black uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+                        <Calculator size={14} />
+                        <span>Project Balance Impact Preview</span>
                       </div>
-                      <div className="text-right font-black text-[#00705a]">
-                        {it.currentAvailable.toLocaleString()} {it.unit || 'MT'}
+                      <span className="text-[11px] text-slate-400">
+                        {receiveVehicleForm.projectName || selectedProjectId}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+                      <div className="bg-white/5 border border-white/10 rounded-xl p-2.5">
+                        <span className="text-[10px] text-slate-400 uppercase font-black block">Total Project Target</span>
+                        <span className="font-black text-white">{projectScopeWeight.toLocaleString()} MT</span>
+                      </div>
+
+                      <div className="bg-white/5 border border-white/10 rounded-xl p-2.5">
+                        <span className="text-[10px] text-slate-400 uppercase font-black block">Previously Received</span>
+                        <span className="font-black text-slate-300">{totalReceiptsWeight.toLocaleString()} MT</span>
+                      </div>
+
+                      <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-2.5">
+                        <span className="text-[10px] text-emerald-300 uppercase font-black block">+ This Vehicle / Wagon</span>
+                        <span className="font-black text-emerald-400">+{thisDeliveryNet.toLocaleString()} MT</span>
+                      </div>
+
+                      <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-2.5">
+                        <span className="text-[10px] text-amber-300 uppercase font-black block">New Balance Remaining</span>
+                        <span className="font-black text-amber-300">{newRemainingBalance.toLocaleString()} MT</span>
                       </div>
                     </div>
-                  ))}
-                </div>
-              );
-            })()}
-          </div>
 
-          <div className="flex items-center gap-2 pt-4 border-t border-slate-100">
-            <button
-              onClick={() => {
-                const nodeName = selectedDigitalTwinNode.rackName;
-                setSelectedDigitalTwinNode(null);
-                handleOpenShiftModal(undefined, nodeName);
-              }}
-              className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-wider shadow-sm transition-all flex items-center justify-center gap-1.5"
-            >
-              <ArrowLeftRight size={14} />
-              <span>Shift From Here</span>
-            </button>
+                    <div>
+                      <div className="flex justify-between text-[11px] font-bold text-slate-400 mb-1">
+                        <span>Project Delivery Progress: <strong className="text-emerald-400">{newProgressPct}%</strong></span>
+                        <span>{newRemainingBalance === 0 ? '100% Contract Fulfilled' : `${newRemainingBalance.toLocaleString()} MT Yet to Receive`}</span>
+                      </div>
+                      <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-300"
+                          style={{ width: `${newProgressPct}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
-            <button
-              onClick={() => {
-                const nodeName = selectedDigitalTwinNode.rackName;
-                const nodeId = selectedDigitalTwinNode.id;
-                setSelectedDigitalTwinNode(null);
-                setStockAddForm(prev => ({
-                  ...prev,
-                  rackId: String(nodeId),
-                  rackName: nodeName
-                }));
-                setViewMode('deep-stock-add');
-              }}
-              className="flex-1 py-2.5 rounded-xl bg-[#00705a] hover:bg-[#005a48] text-white text-xs font-black uppercase tracking-wider shadow-sm transition-all flex items-center justify-center gap-1.5"
-            >
-              <ArrowDownLeft size={14} />
-              <span>Inward Stock Here</span>
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  )}
-
-  {/* MODAL: LOG STANDALONE EQUIPMENT ACTIVITY */}
-  {isLogEqModalOpen && selectedYard && (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
-        <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-emerald-50/50 shrink-0">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
-              <Wrench size={18} />
-            </div>
-            <div>
-              <h3 className="text-base font-black text-slate-900 tracking-tight">Log Heavy Equipment Activity</h3>
-              <p className="text-xs text-slate-500">Record machine runtime and material handling in {selectedYard.yardName}</p>
-            </div>
-          </div>
-          <button
-            onClick={() => setIsLogEqModalOpen(false)}
-            className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100"
-          >
-            <X size={18} />
-          </button>
-        </div>
-
-        <form onSubmit={handleSaveManualEquipmentLog} className="p-6 space-y-4 overflow-y-auto">
-          {formError && (
-            <div className="flex items-center gap-2 p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold rounded-xl animate-shake">
-              <AlertCircle size={15} className="shrink-0" />
-              <span>{formError}</span>
-            </div>
-          )}
-
-          {/* Machine Selection */}
-          <div>
-            <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-              Select Heavy Machinery <span className="text-rose-500">*</span>
-            </label>
-            <select
-              required
-              value={logEqForm.equipmentNumber}
-              onChange={e => {
-                const val = e.target.value;
-                const match = eligibleEquipment.find(eq => eq.equipmentNumber === val || eq.equipmentId === val);
-                setLogEqForm({
-                  ...logEqForm,
-                  equipmentNumber: val,
-                  operatorName: match?.assignedOperatorName || logEqForm.operatorName,
-                  operatorPhone: match?.assignedOperatorPhone || logEqForm.operatorPhone
-                });
-              }}
-              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 cursor-pointer"
-            >
-              <option value="">Choose Machine (JCB, Loader, Excavator, Forklift)...</option>
-              {eligibleEquipment.map(eq => (
-                <option
-                  key={eq.id}
-                  value={eq.equipmentNumber}
-                  disabled={eq.status === 'Under Maintenance'}
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsReceiveVehicleModalOpen(false)}
+                  disabled={isSubmitting}
+                  className="px-5 py-2.5 text-xs font-bold text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200 cursor-pointer"
                 >
-                  {eq.equipmentNumber} — {eq.equipmentType} {eq.make ? `(${eq.make} ${eq.model || ''})` : ''} [{eq.status}]
-                </option>
-              ))}
-            </select>
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="flex items-center gap-2 px-6 py-2.5 text-xs font-black uppercase tracking-wider text-white bg-gradient-to-r from-[#00705a] to-[#008f73] hover:brightness-110 rounded-xl shadow-md transition-all disabled:opacity-50 cursor-pointer active:scale-95"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <RefreshCw size={15} className="animate-spin" />
+                      <span>Recording Weighment...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check size={16} />
+                      <span>Confirm Receipt & Add Stock</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
-
-          {/* Operation & Project */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-                Operation Type <span className="text-rose-500">*</span>
-              </label>
-              <select
-                value={logEqForm.operationType}
-                onChange={e => setLogEqForm({ ...logEqForm, operationType: e.target.value as any })}
-                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 cursor-pointer"
-              >
-                <option value="UNLOADING">Material Unloading</option>
-                <option value="LOADING">Material Loading</option>
-                <option value="INTERNAL_SHIFT">Internal Rack Shifting</option>
-                <option value="OTHER">Other Yard Handling</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-                Project
-              </label>
-              <select
-                value={logEqForm.projectId}
-                onChange={e => {
-                  const pId = e.target.value;
-                  const match = projects.find(p => p.projectId === pId || p.id === pId);
-                  setLogEqForm({
-                    ...logEqForm,
-                    projectId: pId,
-                    projectName: match?.name || pId
-                  });
-                }}
-                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 cursor-pointer"
-              >
-                <option value="">General / No Project</option>
-                {projects.map(p => (
-                  <option key={p.id} value={p.projectId || p.id}>{p.name}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Material & Quantity */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-                Material Handled
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. Track Ballast 40mm"
-                value={logEqForm.materialName}
-                onChange={e => setLogEqForm({ ...logEqForm, materialName: e.target.value })}
-                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-                Quantity (MT)
-              </label>
-              <input
-                type="number"
-                step="0.1"
-                placeholder="20.0"
-                value={logEqForm.quantity}
-                onChange={e => setLogEqForm({ ...logEqForm, quantity: e.target.value })}
-                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
-              />
-            </div>
-          </div>
-
-          {/* Location */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-                Source Location / Rack
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. Siding Bay A1"
-                value={logEqForm.sourceRackName}
-                onChange={e => setLogEqForm({ ...logEqForm, sourceRackName: e.target.value })}
-                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-                Destination Bay / Vehicle
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. Outward Road Tipper"
-                value={logEqForm.destinationRackName}
-                onChange={e => setLogEqForm({ ...logEqForm, destinationRackName: e.target.value })}
-                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
-              />
-            </div>
-          </div>
-
-          {/* Timestamps & Auto Duration */}
-          <div className="grid grid-cols-3 gap-2.5">
-            <div>
-              <label className="block text-[10px] font-black uppercase tracking-wider text-slate-700 mb-1">
-                Start Time
-              </label>
-              <input
-                type="datetime-local"
-                value={logEqForm.startTime}
-                onChange={e => {
-                  const s = e.target.value;
-                  const sT = new Date(s).getTime();
-                  const eT = new Date(logEqForm.endTime).getTime();
-                  let dur = logEqForm.durationHours;
-                  if (!isNaN(sT) && !isNaN(eT) && eT > sT) {
-                    dur = String(parseFloat(((eT - sT) / 3600000).toFixed(2)));
-                  }
-                  setLogEqForm({ ...logEqForm, startTime: s, durationHours: dur });
-                }}
-                className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-black uppercase tracking-wider text-slate-700 mb-1">
-                End Time
-              </label>
-              <input
-                type="datetime-local"
-                value={logEqForm.endTime}
-                onChange={e => {
-                  const end = e.target.value;
-                  const sT = new Date(logEqForm.startTime).getTime();
-                  const eT = new Date(end).getTime();
-                  let dur = logEqForm.durationHours;
-                  if (!isNaN(sT) && !isNaN(eT) && eT > sT) {
-                    dur = String(parseFloat(((eT - sT) / 3600000).toFixed(2)));
-                  }
-                  setLogEqForm({ ...logEqForm, endTime: end, durationHours: dur });
-                }}
-                className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-black uppercase tracking-wider text-slate-700 mb-1">
-                Operating Hours
-              </label>
-              <input
-                type="number"
-                step="0.1"
-                min="0.1"
-                value={logEqForm.durationHours}
-                onChange={e => setLogEqForm({ ...logEqForm, durationHours: e.target.value })}
-                className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black text-emerald-800"
-              />
-            </div>
-          </div>
-
-          {/* Operator Name & Phone */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-                Operator / Driver Name
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. Ramesh Yadav"
-                value={logEqForm.operatorName}
-                onChange={e => setLogEqForm({ ...logEqForm, operatorName: e.target.value })}
-                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-                Operator Phone
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. +91 98112 33445"
-                value={logEqForm.operatorPhone}
-                onChange={e => setLogEqForm({ ...logEqForm, operatorPhone: e.target.value })}
-                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
-              />
-            </div>
-          </div>
-
-          {/* Remarks */}
-          <div>
-            <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-              Activity Remarks
-            </label>
-            <input
-              type="text"
-              placeholder="e.g. Stockpile reshaping and apron leveling"
-              value={logEqForm.remarks}
-              onChange={e => setLogEqForm({ ...logEqForm, remarks: e.target.value })}
-              className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
-            />
-          </div>
-
-          <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-100">
-            <button
-              type="button"
-              onClick={() => setIsLogEqModalOpen(false)}
-              disabled={isSubmitting}
-              className="px-4 py-2 text-xs font-bold text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="flex items-center gap-1.5 px-5 py-2 text-xs font-black uppercase tracking-wider text-white bg-[#00705a] hover:bg-[#005a48] rounded-xl shadow-sm transition-all disabled:opacity-50"
-            >
-              {isSubmitting ? (
-                <>
-                  <RefreshCw size={14} className="animate-spin" />
-                  <span>Logging...</span>
-                </>
-              ) : (
-                <>
-                  <Check size={14} />
-                  <span>Confirm Log Activity</span>
-                </>
-              )}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )}
-
+        </div>
+      )}
     </div >
   );
 }

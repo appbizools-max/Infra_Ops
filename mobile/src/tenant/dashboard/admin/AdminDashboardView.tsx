@@ -148,7 +148,7 @@ const DashboardRow = ({ icon, label, value }: { icon: string; label: string; val
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FFFFFF',
   },
   content: {
     padding: 16,

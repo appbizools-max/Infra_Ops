@@ -13,7 +13,7 @@ export default function OtpVerificationScreen({ route, navigation }: any) {
   const [timer, setTimer] = useState(60);
 
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let interval: any;
     if (timer > 0) {
       interval = setInterval(() => setTimer((t) => t - 1), 1000);
     }
@@ -43,7 +43,7 @@ export default function OtpVerificationScreen({ route, navigation }: any) {
       style={styles.container}
       imageStyle={{ opacity: 0.6, resizeMode: 'cover', height: '65%', top: -40 }}
     >
-      <StatusBar style="dark" translucent backgroundColor="transparent" />
+      <StatusBar style="dark" />
       <LinearGradient
         colors={['rgba(255, 255, 255, 0.1)', 'rgba(255, 255, 255, 0.7)', '#FFFFFF']}
         locations={[0, 0.3, 0.55]}

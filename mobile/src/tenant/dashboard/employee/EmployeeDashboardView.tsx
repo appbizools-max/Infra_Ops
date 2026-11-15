@@ -100,7 +100,7 @@ export default function EmployeeDashboardView({ profile, status, handleUpdateSta
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FFFFFF',
   },
   content: {
     padding: 16,

@@ -24,6 +24,7 @@ import WorkOrdersPage from './pages/tenant/workorder/WorkOrdersPage';
 import VehicleMasterPage from './pages/tenant/vehicle-master/VehicleMasterPage';
 import VehicleAssignmentPage from './pages/tenant/vehicle-assignment/VehicleAssignmentPage';
 import FleetOperationsPage from './pages/tenant/fleet-operations/FleetOperationsPage';
+import TemporaryVehiclesPage from './pages/tenant/temporary-vehicles/TemporaryVehiclesPage';
 import FmsEmployeePortalPage from './pages/tenant/fms-employee/FmsEmployeePortalPage';
 import StockyardPage from './pages/tenant/stockyard/StockyardPage';
 import OperationsCorridorsPage from './pages/tenant/operations-corridors/OperationsCorridorsPage';
@@ -197,6 +198,7 @@ function App() {
             <Route path="vehicle-master" element={<VehicleMasterPage />} />
             <Route path="vehicle-assignment" element={<Navigate to="/tenant/vehicle-master" replace />} />
             <Route path="fleet-operations" element={<FleetOperationsPage />} />
+            <Route path="temporary-vehicles" element={<TemporaryVehiclesPage />} />
             <Route path="fms-employee" element={<FmsEmployeePortalPage />} />
             <Route path="my-vehicle-assignment" element={<Navigate to="/tenant/fms-employee" replace />} />
             <Route path="fuel-running-logs" element={<Navigate to="/tenant/fleet-operations" replace />} />
