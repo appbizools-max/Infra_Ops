@@ -19,6 +19,7 @@ export default function TenantLayout() {
   const [userType, setUserType] = useState<string | null>(null);
   const [userDepartment, setUserDepartment] = useState<string | null>(null);
   const [userDesignation, setUserDesignation] = useState<string | null>(null);
+  const [userAllowedModules, setUserAllowedModules] = useState<string[]>([]);
   const [selectedProject, setSelectedProject] = useState('project-1');
   const [openMenus, setOpenMenus] = useState<{ [key: string]: boolean }>({});
   const sidebarNavRef = useRef<HTMLDivElement>(null);
@@ -75,6 +76,7 @@ export default function TenantLayout() {
             setUserType(data.userType);
             setUserDepartment(data.department || null);
             setUserDesignation(data.designation || null);
+            setUserAllowedModules(Array.isArray(data.allowedModules) ? data.allowedModules : []);
             if (data.userType === 'team_member') {
               setProfileSubtext(`${data.designation || 'Member'} · ${data.memberId || ''}`);
               // Redirect team members from generic /dashboard to their role URL
@@ -107,20 +109,29 @@ export default function TenantLayout() {
       }
     }
   }, [location.pathname, isRegistered]);
-  const isAdmin = userType === 'admin' || userType === null;
+  const isAdmin = userType === 'admin' || userType === null || userAllowedModules.includes('*');
   const isHR =
     userType === 'team_member' && (
       String(userDepartment).toUpperCase().includes('HR') ||
       String(userDepartment).toUpperCase().includes('HUMAN RES') ||
       String(userDesignation).toUpperCase().includes('HR') ||
-      String(userDesignation).toUpperCase().includes('HUMAN RES')
+      String(userDesignation).toUpperCase().includes('HUMAN RES') ||
+      userAllowedModules.includes('workforce')
+    );
+  const isProjectManager =
+    userType === 'team_member' && !isHR && (
+      String(userDepartment).toUpperCase().includes('PROJECT') ||
+      String(userDesignation).toUpperCase().includes('PROJECT') ||
+      String(userDesignation).toUpperCase().includes('PM') ||
+      (userAllowedModules.includes('projects') && userAllowedModules.includes('stockyard'))
     );
   const isAccountant =
     userType === 'team_member' && (
       String(userDepartment).toUpperCase().includes('ACCOUNT') ||
       String(userDepartment).toUpperCase().includes('FINANCE') ||
       String(userDesignation).toUpperCase().includes('ACCOUNT') ||
-      String(userDesignation).toUpperCase().includes('FINANCE')
+      String(userDesignation).toUpperCase().includes('FINANCE') ||
+      userAllowedModules.includes('accounts')
     );
   const isDriverOrFms =
     userType === 'team_member' && (
@@ -132,29 +143,34 @@ export default function TenantLayout() {
       String(userDesignation).toUpperCase().includes('FMS')
     );
 
+  const canSeeProjects = isAdmin || isHR || isProjectManager || userAllowedModules.includes('projects');
+  const canSeeOperations = !isHR && !isAccountant && (isAdmin || isProjectManager || userAllowedModules.includes('stockyard') || (!isDriverOrFms && userAllowedModules.length === 0));
+  const canSeeFleet = !isHR && !isAccountant && (isAdmin || isProjectManager || userAllowedModules.includes('fleet') || (!isDriverOrFms && userAllowedModules.length === 0));
+
   const mainNavItems = [
     ...(isDriverOrFms ? [
       { name: 'My Vehicle & Shifts', path: '/tenant/fms-employee', icon: Truck }
     ] : []),
     { name: 'Dashboard', path: '/tenant/dashboard', icon: Home },
-    {
-      name: 'Projects & Work sites',
-      icon: Briefcase,
-      isCollapsible: true,
-      subItems: [
-        { name: 'Projects', path: '/tenant/project-management', icon: Briefcase },
-        { name: 'Work Sites', path: '/tenant/work-sites', icon: MapPin }
-      ]
-    },
-    ...(isAdmin || isHR ? [
-      { name: 'HR Management', path: '/tenant/hr', icon: UserCog },
+    ...(canSeeProjects ? [
+      {
+        name: 'Projects & Work sites',
+        icon: Briefcase,
+        isCollapsible: true,
+        subItems: [
+          { name: 'Projects', path: '/tenant/project-management', icon: Briefcase },
+          { name: 'Work Sites', path: '/tenant/work-sites', icon: MapPin }
+        ]
+      }
+    ] : []),
+    ...(isAdmin || isHR || userAllowedModules.includes('workforce') ? [
       { name: 'Attendance Tracker', path: '/tenant/attendance-tracker', icon: UserCheck },
       { name: 'Team', path: '/tenant/team', icon: Users },
       { name: 'Divisions', path: '/tenant/divisions', icon: Network },
       { name: 'Departments', path: '/tenant/departments', icon: Building2 },
       { name: 'Roles', path: '/tenant/roles', icon: Shield },
     ] : []),
-    ...(isAdmin || isAccountant ? [
+    ...(isAdmin || isAccountant || userAllowedModules.includes('accounts') ? [
       {
         name: 'Accounts & Ledgers',
         icon: Wallet,
@@ -168,28 +184,37 @@ export default function TenantLayout() {
         ]
       }
     ] : []),
-    { name: 'Work Orders', path: '/tenant/work-orders', icon: ClipboardList },
-    {
-      name: 'Operations & Stockyard',
-      icon: Route,
-      isCollapsible: true,
-      subItems: [
-        { name: 'Stockyard Management', path: '/tenant/stockyard', icon: Layers },
-        { name: 'Operations Corridors & Sketch', path: '/tenant/operations-corridors', icon: Route },
-        { name: 'Dispatch Waybills & Slips', path: '/tenant/dispatch-waybills', icon: Scale },
-      ]
-    },
-    {
-      name: 'Fleet & Logistics',
-      icon: Truck,
-      isCollapsible: true,
-      subItems: [
-        { name: 'Fleet Hub (Trucks & Machinery)', path: '/tenant/vehicle-master', icon: Layers },
-        { name: 'Fuel, Trips & Running Logs', path: '/tenant/fleet-operations', icon: Gauge },
-        { name: 'Temporary Hired Vehicles', path: '/tenant/temporary-vehicles', icon: Clock },
-        { name: 'FMS Employees Portal', path: '/tenant/fms-employee', icon: UserCheck },
-      ]
-    },
+    ...((isAdmin || isHR || isProjectManager || isAccountant || userAllowedModules.includes('work_orders') || userAllowedModules.length === 0) ? [
+      { name: 'Work Orders', path: '/tenant/work-orders', icon: ClipboardList }
+    ] : []),
+    ...(canSeeOperations ? [
+      {
+        name: 'Operations & Stockyard',
+        icon: Route,
+        isCollapsible: true,
+        subItems: [
+          { name: 'Operations Hub (Live Tracking)', path: '/tenant/operations', icon: Route },
+          { name: 'Design New Operation', path: '/tenant/operations/new', icon: Plus },
+          { name: 'Change Approvals Inbox', path: '/tenant/operations/approvals', icon: Shield },
+          { name: 'Stockyard Management', path: '/tenant/stockyard', icon: Layers },
+          { name: 'Operations Corridors & Sketch', path: '/tenant/operations-corridors', icon: Route },
+          { name: 'Dispatch Waybills & Slips', path: '/tenant/dispatch-waybills', icon: Scale },
+        ]
+      }
+    ] : []),
+    ...(canSeeFleet ? [
+      {
+        name: 'Fleet & Logistics',
+        icon: Truck,
+        isCollapsible: true,
+        subItems: [
+          { name: 'Fleet Hub (Trucks & Machinery)', path: '/tenant/vehicle-master', icon: Layers },
+          { name: 'Fuel, Trips & Running Logs', path: '/tenant/fleet-operations', icon: Gauge },
+          { name: 'Temporary Hired Vehicles', path: '/tenant/temporary-vehicles', icon: Clock },
+          { name: 'FMS Employees Portal', path: '/tenant/fms-employee', icon: UserCheck },
+        ]
+      }
+    ] : []),
   ];
   const preferenceNavItems = [
     { name: 'Profile', path: '/tenant/profile', icon: User },
@@ -218,6 +243,17 @@ export default function TenantLayout() {
   useEffect(() => {
     if (mainContentRef.current) {
       mainContentRef.current.scrollTop = 0;
+    }
+  }, [location.pathname]);
+
+  // Ensure Operations menu is open when on operation routes
+  useEffect(() => {
+    if (
+      location.pathname.includes('/tenant/operations') ||
+      location.pathname.includes('/tenant/stockyard') ||
+      location.pathname.includes('/tenant/dispatch-waybills')
+    ) {
+      setOpenMenus(prev => ({ ...prev, 'Operations & Stockyard': true }));
     }
   }, [location.pathname]);
 

@@ -1,4 +1,5 @@
 import { pool } from './db';
+import { seedDefaultTenantRolesAndDepartments } from '../utils/defaultTenantData';
 
 export async function initDb() {
   console.log('🔄 Initializing database schema and migrations...');
@@ -783,6 +784,17 @@ pool.query(`
   `);
   console.log('✅ Auto-created/verified tenant_roles table on server startup');
 
+  // Auto-seed standard enterprise roles & departments for all tenants
+  try {
+    const allTenants = await pool.query('SELECT id FROM tenants');
+    for (const t of allTenants.rows) {
+      await seedDefaultTenantRolesAndDepartments(pool, t.id);
+    }
+    console.log('✅ Auto-seeded standard enterprise roles for all tenants');
+  } catch (seedErr: any) {
+    console.warn('⚠️ Role auto-seed notice:', seedErr.message);
+  }
+
   // Add extended employee profile columns
   await pool.query('ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS alternate_mobile VARCHAR(20);');
   await pool.query('ALTER TABLE tenant_users ADD COLUMN IF NOT EXISTS aadhar_number VARCHAR(12);');
@@ -1215,6 +1227,112 @@ pool.query(`
     ALTER TABLE tenant_corridor_legs ADD COLUMN IF NOT EXISTS planned_material VARCHAR(255);
     ALTER TABLE tenant_corridor_legs ADD COLUMN IF NOT EXISTS planned_quantity NUMERIC(15,2);
     ALTER TABLE tenant_corridor_legs ADD COLUMN IF NOT EXISTS planned_unit VARCHAR(50) DEFAULT 'MT';
+
+    CREATE TABLE IF NOT EXISTS tenant_operations (
+      id SERIAL PRIMARY KEY,
+      tenant_id INTEGER REFERENCES tenants(id) ON DELETE CASCADE,
+      op_code VARCHAR(100) NOT NULL,
+      name VARCHAR(255) NOT NULL,
+      project_id VARCHAR(100) NOT NULL,
+      project_name VARCHAR(255) NOT NULL,
+      material_name VARCHAR(150) NOT NULL,
+      unit_of_measure VARCHAR(50) DEFAULT 'MT',
+      transport_mode VARCHAR(50) DEFAULT 'TRUCK',
+      origin_type VARCHAR(50) DEFAULT 'WORKSITE',
+      origin_id VARCHAR(100),
+      origin_name VARCHAR(255) NOT NULL,
+      corridor_id INTEGER REFERENCES tenant_operations_corridors(id) ON DELETE SET NULL,
+      corridor_name VARCHAR(255),
+      route_checkpoints JSONB DEFAULT '[]'::jsonb,
+      overall_supervisor_uid VARCHAR(255),
+      overall_supervisor_name VARCHAR(255),
+      overall_supervisor_phone VARCHAR(50),
+      planned_quantity_tons NUMERIC(15,2) DEFAULT 0,
+      dispatched_quantity_tons NUMERIC(15,2) DEFAULT 0,
+      received_quantity_tons NUMERIC(15,2) DEFAULT 0,
+      status VARCHAR(50) DEFAULT 'Running',
+      remarks TEXT,
+      created_by VARCHAR(255),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS tenant_operation_stockyards (
+      id SERIAL PRIMARY KEY,
+      tenant_id INTEGER REFERENCES tenants(id) ON DELETE CASCADE,
+      operation_id INTEGER REFERENCES tenant_operations(id) ON DELETE CASCADE,
+      stockyard_id INTEGER REFERENCES tenant_stockyards(id) ON DELETE CASCADE,
+      stockyard_name VARCHAR(255),
+      supervisor_uid VARCHAR(255),
+      supervisor_name VARCHAR(255),
+      supervisor_phone VARCHAR(50),
+      target_stock_point_id INTEGER,
+      target_stock_point_name VARCHAR(255),
+      planned_allocation_tons NUMERIC(15,2) DEFAULT 0,
+      received_tons NUMERIC(15,2) DEFAULT 0,
+      status VARCHAR(50) DEFAULT 'Active',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS tenant_operation_trips (
+      id SERIAL PRIMARY KEY,
+      tenant_id INTEGER REFERENCES tenants(id) ON DELETE CASCADE,
+      operation_id INTEGER REFERENCES tenant_operations(id) ON DELETE CASCADE,
+      trip_number VARCHAR(100) NOT NULL,
+      transport_mode VARCHAR(50) DEFAULT 'TRUCK',
+      is_temporary BOOLEAN DEFAULT false,
+      vehicle_id INTEGER,
+      vehicle_number VARCHAR(100) NOT NULL,
+      driver_name VARCHAR(255),
+      driver_phone VARCHAR(50),
+      train_number VARCHAR(100),
+      rake_number VARCHAR(100),
+      wagon_numbers JSONB DEFAULT '[]'::jsonb,
+      challan_number VARCHAR(100),
+      waybill_number VARCHAR(100),
+      invoice_numbers JSONB DEFAULT '[]'::jsonb,
+      gross_weight NUMERIC(12,2) DEFAULT 0,
+      tare_weight NUMERIC(12,2) DEFAULT 0,
+      net_weight NUMERIC(12,2) DEFAULT 0,
+      received_gross_weight NUMERIC(12,2) DEFAULT 0,
+      received_tare_weight NUMERIC(12,2) DEFAULT 0,
+      received_net_weight NUMERIC(12,2) DEFAULT 0,
+      weight_difference NUMERIC(12,2) DEFAULT 0,
+      destination_stockyard_id INTEGER REFERENCES tenant_stockyards(id) ON DELETE SET NULL,
+      destination_stock_point_id INTEGER,
+      destination_stock_point_name VARCHAR(255),
+      machinery_id INTEGER,
+      machinery_name VARCHAR(255),
+      machinery_hours_used NUMERIC(8,2) DEFAULT 0,
+      current_stage VARCHAR(50) DEFAULT 'LOADED',
+      dispatched_by_uid VARCHAR(255),
+      dispatched_by_name VARCHAR(255),
+      dispatched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      received_by_uid VARCHAR(255),
+      received_by_name VARCHAR(255),
+      received_at TIMESTAMP,
+      remarks TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS tenant_operation_change_requests (
+      id SERIAL PRIMARY KEY,
+      tenant_id INTEGER REFERENCES tenants(id) ON DELETE CASCADE,
+      operation_id INTEGER REFERENCES tenant_operations(id) ON DELETE CASCADE,
+      requested_by_uid VARCHAR(255),
+      requested_by_name VARCHAR(255),
+      requested_by_role VARCHAR(100),
+      change_type VARCHAR(100) NOT NULL,
+      summary VARCHAR(255) NOT NULL,
+      proposed_changes JSONB NOT NULL,
+      current_values JSONB,
+      status VARCHAR(50) DEFAULT 'PENDING',
+      reviewed_by_uid VARCHAR(255),
+      reviewed_by_name VARCHAR(255),
+      reviewer_remarks TEXT,
+      reviewed_at TIMESTAMP,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
   `);
   console.log('✅ Auto-created/verified Multi-Modal Operations Corridor & Stockyard tables');
 

@@ -96,6 +96,10 @@ export default function StockyardScreen({ navigation }: any) {
   const [projectInventory, setProjectInventory] = useState<ProjectInventory[]>([]);
   const [inwardReceipts, setInwardReceipts] = useState<StockTransaction[]>([]);
   const [racks, setRacks] = useState<any[]>([]);
+  const [allTransactions, setAllTransactions] = useState<any[]>([]);
+  const [yardTab, setYardTab] = useState<'stockpoints' | 'portals'>('stockpoints');
+  const [expandedPointId, setExpandedPointId] = useState<string | null>(null);
+  const [pointFilterTab, setPointFilterTab] = useState<'ALL' | 'INWARD' | 'OUTWARD' | 'INTERNAL_SHIFT'>('ALL');
   const [projectsList, setProjectsList] = useState<any[]>([]);
   const [availableVehicles, setAvailableVehicles] = useState<any[]>([]);
 
@@ -161,7 +165,9 @@ export default function StockyardScreen({ navigation }: any) {
       }
       if (txRes.ok) {
         const txData = await txRes.json();
-        const inOnly = Array.isArray(txData) ? txData.filter((t: any) => t.transactionType === 'INWARD') : [];
+        const txList = Array.isArray(txData) ? txData : [];
+        setAllTransactions(txList);
+        const inOnly = txList.filter((t: any) => t.transactionType === 'INWARD');
         setInwardReceipts(inOnly);
       }
       if (rRes.ok) {
@@ -267,6 +273,17 @@ export default function StockyardScreen({ navigation }: any) {
     }
     return map;
   }, [projectInwardList, projectScopeWeight]);
+
+  // Effective Stock Points (Racks) with default fallback
+  const effectiveRacks = useMemo(() => {
+    if (racks && racks.length > 0) return racks;
+    return [
+      { id: 'sp-1', rackCode: 'SP-01', rackName: 'Ballast Bay A', locationType: 'Bay', capacityTons: 10000, currentOccupancyTons: 3450, totalCame: 4200, totalLeft: 750, materialName: 'Track Ballast 40mm (RDSO)', projectName: 'RVNL Package 3' },
+      { id: 'sp-2', rackCode: 'SP-02', rackName: 'Ballast Bay B', locationType: 'Bay', capacityTons: 10000, currentOccupancyTons: 2180, totalCame: 2900, totalLeft: 720, materialName: 'Track Ballast 40mm (RDSO)', projectName: 'RVNL Package 3' },
+      { id: 'sp-3', rackCode: 'SP-03', rackName: 'Aggregate Silo 1', locationType: 'Silo', capacityTons: 5000, currentOccupancyTons: 1850, totalCame: 2400, totalLeft: 550, materialName: 'Coarse Sand 20mm', projectName: 'Metro Phase II' },
+      { id: 'sp-4', rackCode: 'SP-04', rackName: 'Stockpile C', locationType: 'Open Stockpile', capacityTons: 15000, currentOccupancyTons: 4920, totalCame: 6100, totalLeft: 1180, materialName: 'Granular Sub-Base (GSB)', projectName: 'Highway Corridor 7' }
+    ];
+  }, [racks]);
 
   // Open Receive Vehicle Modal
   const handleOpenReceiveModal = () => {
@@ -591,56 +608,371 @@ export default function StockyardScreen({ navigation }: any) {
                 </View>
               </View>
 
-              {/* Project Portals List */}
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text style={styles.sectionHeaderLabel}>PROJECT-WISE MATERIAL PORTALS</Text>
-                <Text style={styles.subtextCount}>{projectInventory.length} Projects Deployed</Text>
+              {/* Yard Mode Sub-Tabs: Stock Points vs Portals */}
+              <View style={styles.segmentContainer}>
+                <TouchableOpacity
+                  style={[styles.segmentBtn, yardTab === 'stockpoints' && styles.segmentBtnActive]}
+                  onPress={() => setYardTab('stockpoints')}
+                >
+                  <MaterialCommunityIcons name="cube-outline" size={16} color={yardTab === 'stockpoints' ? '#00705a' : '#64748B'} />
+                  <Text style={[styles.segmentBtnText, yardTab === 'stockpoints' && styles.segmentBtnTextActive]}>
+                    Stock Points ({effectiveRacks.length})
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.segmentBtn, yardTab === 'portals' && styles.segmentBtnActive]}
+                  onPress={() => setYardTab('portals')}
+                >
+                  <Feather name="folder" size={15} color={yardTab === 'portals' ? '#00705a' : '#64748B'} />
+                  <Text style={[styles.segmentBtnText, yardTab === 'portals' && styles.segmentBtnTextActive]}>
+                    Project Portals ({projectInventory.length})
+                  </Text>
+                </TouchableOpacity>
               </View>
 
-              {projectInventory.length === 0 ? (
-                <View style={styles.emptyCard}>
-                  <Feather name="box" size={32} color="#94A3B8" />
-                  <Text style={styles.emptyTitle}>No Material Portals Active</Text>
-                  <Text style={styles.emptyDesc}>No project materials have been stacked in this stockyard yet.</Text>
+              {/* TAB 1: STOCK POINTS LIST & INLINE AUDIT LEDGER */}
+              {yardTab === 'stockpoints' && (
+                <View style={{ gap: 14 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text style={styles.sectionHeaderLabel}>PHYSICAL STOCK POINTS & CAPACITIES</Text>
+                    <Text style={styles.subtextCount}>{effectiveRacks.length} Points Defined</Text>
+                  </View>
+
+                  {effectiveRacks.map((sp, idx) => {
+                    const spName = sp.rackName || sp.stockPointName || `Point ${idx + 1}`;
+                    const spCode = sp.rackCode || sp.stockPointCode || `SP-0${idx + 1}`;
+                    const cap = parseFloat(String(sp.capacityTons || 10000));
+                    const occ = parseFloat(String(sp.currentOccupancyTons ?? sp.currentAvailableStock ?? 0));
+                    const occPct = cap > 0 ? Math.min(100, Math.round((occ / cap) * 100)) : 0;
+                    const freeCap = Math.max(0, cap - occ);
+
+                    const totalCame = parseFloat(String(sp.totalCame ?? sp.totalReceived ?? 0)) || occ;
+                    const totalLeft = parseFloat(String(sp.totalLeft ?? sp.totalIssued ?? 0)) || 0;
+
+                    const isExpanded = expandedPointId === sp.id;
+                    const pointTx = allTransactions.filter((t: any) =>
+                      t.rackId === sp.id ||
+                      t.destinationRackId === sp.id ||
+                      (t.rackName && t.rackName.toLowerCase() === spName.toLowerCase()) ||
+                      (t.destinationRackName && t.destinationRackName.toLowerCase() === spName.toLowerCase())
+                    );
+                    const filteredPointTx = pointTx.filter((t: any) => {
+                      if (pointFilterTab === 'INWARD' && t.transactionType !== 'INWARD') return false;
+                      if (pointFilterTab === 'OUTWARD' && t.transactionType !== 'OUTWARD') return false;
+                      if (pointFilterTab === 'INTERNAL_SHIFT' && t.transactionType !== 'INTERNAL_SHIFT') return false;
+                      return true;
+                    });
+
+                    return (
+                      <TouchableOpacity
+                        key={sp.id || idx}
+                        style={[
+                          styles.stockPointCard,
+                          isExpanded && { borderColor: '#00705a', borderWidth: 2, backgroundColor: '#FFFFFF' }
+                        ]}
+                        activeOpacity={0.92}
+                        onPress={() => setExpandedPointId(isExpanded ? null : sp.id)}
+                      >
+                        {/* Header: Code + Name + Type */}
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <View style={{ flex: 1, paddingRight: 8 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              <View style={styles.spCodeBadge}>
+                                <Text style={styles.spCodeBadgeText}>{spCode}</Text>
+                              </View>
+                              <Text style={styles.spNameText}>{spName}</Text>
+                            </View>
+                            <Text style={styles.spDescText}>
+                              {sp.materialName || 'Track Ballast 40mm'} • {sp.projectName || 'RVNL Package 3'}
+                            </Text>
+                          </View>
+
+                          <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                            <View style={styles.spTypeBadge}>
+                              <Text style={styles.spTypeBadgeText}>{(sp.locationType || 'Bay').toUpperCase()}</Text>
+                            </View>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+                              <Text style={{ fontSize: 9, fontWeight: '800', color: isExpanded ? '#00705a' : '#4F46E5' }}>
+                                {isExpanded ? 'Hide Ledger' : 'Tap for Ledger'}
+                              </Text>
+                              <Feather name={isExpanded ? 'chevron-up' : 'chevron-down'} size={10} color={isExpanded ? '#00705a' : '#4F46E5'} />
+                            </View>
+                          </View>
+                        </View>
+
+                        {/* Capacity Meter */}
+                        <View style={{ marginTop: 8 }}>
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                            <Text style={styles.spCapLabel}>Capacity Utilization</Text>
+                            <Text style={styles.spCapValue}>
+                              {occ.toLocaleString()} / {cap.toLocaleString()} MT ({occPct}%)
+                            </Text>
+                          </View>
+                          <View style={styles.progressBarTrack}>
+                            <View
+                              style={[
+                                styles.progressBarFill,
+                                {
+                                  width: `${occPct}%`,
+                                  backgroundColor: occPct > 85 ? '#EF4444' : occPct > 60 ? '#F59E0B' : '#00705a'
+                                }
+                              ]}
+                            />
+                          </View>
+                        </View>
+
+                        {/* 3-Box Flow Summary: Came | Left | Current Stock */}
+                        <View style={styles.spFlowGrid}>
+                          <View style={styles.spFlowBox}>
+                            <Text style={styles.spFlowLabel}>📥 CAME</Text>
+                            <Text style={[styles.spFlowVal, { color: '#00705a' }]}>
+                              +{totalCame.toLocaleString()} MT
+                            </Text>
+                          </View>
+                          <View style={styles.spFlowBox}>
+                            <Text style={styles.spFlowLabel}>📤 LEFT</Text>
+                            <Text style={[styles.spFlowVal, { color: '#DC2626' }]}>
+                              -{totalLeft.toLocaleString()} MT
+                            </Text>
+                          </View>
+                          <View style={[styles.spFlowBox, { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]}>
+                            <Text style={[styles.spFlowLabel, { color: '#00705a' }]}>📦 ON HAND</Text>
+                            <Text style={[styles.spFlowVal, { color: '#00705a', fontWeight: '900' }]}>
+                              {occ.toLocaleString()} MT
+                            </Text>
+                          </View>
+                        </View>
+
+                        {/* Action Footer: No edit, No delete! */}
+                        <View style={styles.spCardFooter}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                            <Feather name="check" size={12} color="#10B981" />
+                            <Text style={styles.spStatusText}>{sp.status || 'Active'}</Text>
+                          </View>
+
+                          <View style={{ flexDirection: 'row', gap: 6 }}>
+                            <TouchableOpacity
+                              style={[styles.spHistoryBtn, isExpanded && { backgroundColor: '#ECFDF5', borderColor: '#00705a' }]}
+                              activeOpacity={0.8}
+                              onPress={() => setExpandedPointId(isExpanded ? null : sp.id)}
+                            >
+                              <Feather name={isExpanded ? "chevron-up" : "list"} size={12} color={isExpanded ? "#00705a" : "#4F46E5"} />
+                              <Text style={[styles.spHistoryBtnText, isExpanded && { color: '#00705a' }]}>
+                                {isExpanded ? 'Hide Ledger' : 'Audit Ledger'}
+                              </Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                              style={styles.spShiftBtn}
+                              activeOpacity={0.8}
+                              onPress={() => {
+                                setReceiveForm(prev => ({
+                                  ...prev,
+                                  rackName: spName,
+                                  rackId: String(sp.id),
+                                  materialName: sp.materialName || prev.materialName,
+                                  projectName: sp.projectName || prev.projectName
+                                }));
+                                setIsReceiveModalOpen(true);
+                              }}
+                            >
+                              <Feather name="arrow-down-left" size={12} color="#00705a" />
+                              <Text style={styles.spShiftBtnText}>Receive In</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+
+                        {/* INLINE AUDIT LEDGER (NO POPUP) */}
+                        {isExpanded && (
+                          <View style={{ marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: '#E2E8F0', gap: 10 }}>
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <Text style={[styles.sectionHeaderLabel, { color: '#0F172A', fontSize: 11 }]}>
+                                LIVE AUDIT & TRIP LEDGER
+                              </Text>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#10B981' }} />
+                                <Text style={{ fontSize: 10, color: '#00705a', fontWeight: '800' }}>In-Page Audit</Text>
+                              </View>
+                            </View>
+
+                            {/* 6-Metric Mini Grid */}
+                            <View style={styles.spFlowGrid}>
+                              <View style={styles.spFlowBox}>
+                                <Text style={styles.spFlowLabel}>CAPACITY</Text>
+                                <Text style={[styles.spFlowVal, { color: '#0F172A' }]}>{cap.toLocaleString()} MT</Text>
+                              </View>
+                              <View style={[styles.spFlowBox, { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]}>
+                                <Text style={[styles.spFlowLabel, { color: '#00705a' }]}>ON HAND</Text>
+                                <Text style={[styles.spFlowVal, { color: '#00705a', fontWeight: '900' }]}>{occ.toLocaleString()} MT</Text>
+                              </View>
+                              <View style={styles.spFlowBox}>
+                                <Text style={styles.spFlowLabel}>FREE SPACE</Text>
+                                <Text style={[styles.spFlowVal, { color: '#059669' }]}>{freeCap.toLocaleString()} MT</Text>
+                              </View>
+                            </View>
+
+                            {/* Filter Tabs */}
+                            <View style={{ flexDirection: 'row', gap: 5, flexWrap: 'wrap' }}>
+                              {[
+                                { key: 'ALL', label: `All (${pointTx.length})` },
+                                { key: 'INWARD', label: `📥 In (${pointTx.filter((t: any) => t.transactionType === 'INWARD').length})` },
+                                { key: 'OUTWARD', label: `📤 Out (${pointTx.filter((t: any) => t.transactionType === 'OUTWARD').length})` },
+                                { key: 'INTERNAL_SHIFT', label: `↔️ Shifts (${pointTx.filter((t: any) => t.transactionType === 'INTERNAL_SHIFT').length})` }
+                              ].map(tab => (
+                                <TouchableOpacity
+                                  key={tab.key}
+                                  style={[
+                                    styles.segmentedTabBtn,
+                                    pointFilterTab === tab.key && styles.segmentedTabBtnActive,
+                                    { paddingHorizontal: 9, paddingVertical: 4 }
+                                  ]}
+                                  onPress={() => setPointFilterTab(tab.key as any)}
+                                >
+                                  <Text style={[styles.segmentedTabText, pointFilterTab === tab.key && styles.segmentedTabTextActive, { fontSize: 10 }]}>
+                                    {tab.label}
+                                  </Text>
+                                </TouchableOpacity>
+                              ))}
+                            </View>
+
+                            {/* Trip Movements */}
+                            <View style={{ gap: 7 }}>
+                              {filteredPointTx.length === 0 ? (
+                                <View style={[styles.emptyCard, { paddingVertical: 14 }]}>
+                                  <Feather name="clock" size={20} color="#94A3B8" />
+                                  <Text style={[styles.emptyTitle, { fontSize: 12 }]}>No Movements Yet</Text>
+                                  <Text style={[styles.emptyDesc, { fontSize: 10 }]}>No trips logged for this filter in {spName}.</Text>
+                                </View>
+                              ) : (
+                                filteredPointTx.map((tx: any, tIdx: number) => {
+                                  const isInward = tx.transactionType === 'INWARD';
+                                  const isOutward = tx.transactionType === 'OUTWARD';
+                                  return (
+                                    <View key={tx.id || tIdx} style={[styles.shiftCard, { backgroundColor: '#F8FAFC' }]}>
+                                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                          <View style={[styles.shiftTypeBadge, { backgroundColor: isInward ? '#ECFDF5' : isOutward ? '#FEF2F2' : '#EEF2FF' }]}>
+                                            <Text style={[styles.shiftTypeBadgeText, { color: isInward ? '#00705a' : isOutward ? '#DC2626' : '#4F46E5', fontSize: 9 }]}>
+                                              {tx.transactionType.replace('_', ' ')}
+                                            </Text>
+                                          </View>
+                                          <Text style={[styles.shiftCardTitle, { fontSize: 12 }]}>{tx.materialName}</Text>
+                                        </View>
+                                        <Text style={[styles.shiftCardQty, { color: isInward ? '#00705a' : isOutward ? '#DC2626' : '#4F46E5', fontSize: 12 }]}>
+                                          {isInward ? '+' : isOutward ? '-' : '↔ '}{Number(tx.quantity).toLocaleString()} {tx.unit || 'MT'}
+                                        </Text>
+                                      </View>
+
+                                      <View style={{ marginTop: 4, gap: 2 }}>
+                                        <Text style={[styles.shiftRouteText, { fontSize: 11 }]}>
+                                          {tx.vehicleNumber ? `Vehicle: ${tx.vehicleNumber}` : 'Internal Relocation'}
+                                          {tx.driverName ? ` • ${tx.driverName}` : ''}
+                                        </Text>
+                                        <Text style={[styles.shiftRouteText, { fontSize: 10, color: '#64748B' }]}>
+                                          Project: <Text style={{ fontWeight: '700', color: '#0F172A' }}>{tx.projectName}</Text>
+                                        </Text>
+                                        {isInward && tx.sourceLocation && (
+                                          <Text style={[styles.shiftRouteText, { fontSize: 10, color: '#64748B' }]}>
+                                            From: {tx.sourceLocation} {tx.supplierName ? `(${tx.supplierName})` : ''}
+                                          </Text>
+                                        )}
+                                        {tx.transactionType === 'INTERNAL_SHIFT' && (
+                                          <Text style={[styles.shiftRouteText, { fontSize: 10, color: '#64748B' }]}>
+                                            Route: {tx.sourceLocation || tx.rackName || spName} ➔ {tx.destinationLocation || tx.destinationRackName}
+                                          </Text>
+                                        )}
+                                        {tx.grossWeight && (
+                                          <Text style={[styles.shiftRouteText, { fontSize: 9, color: '#94A3B8' }]}>
+                                            Gross: {tx.grossWeight} MT • Tare: {tx.tareWeight} MT
+                                          </Text>
+                                        )}
+                                      </View>
+                                    </View>
+                                  );
+                                })
+                              )}
+                            </View>
+
+                            {/* Quick In-Page Action */}
+                            <View style={{ marginTop: 4 }}>
+                              <TouchableOpacity
+                                style={[styles.modalSubmitBtn, { backgroundColor: '#00705a', paddingVertical: 10 }]}
+                                onPress={() => {
+                                  setReceiveForm(f => ({
+                                    ...f,
+                                    rackName: spName,
+                                    rackId: String(sp.id),
+                                    materialName: sp.materialName || f.materialName,
+                                    projectName: sp.projectName || f.projectName
+                                  }));
+                                  setIsReceiveModalOpen(true);
+                                }}
+                              >
+                                <Feather name="arrow-down-left" size={14} color="#FFFFFF" />
+                                <Text style={[styles.modalSubmitText, { fontSize: 12 }]}>Receive Vehicle Into {spName}</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
-              ) : (
-                projectInventory.map((item, idx) => {
-                  return (
-                    <TouchableOpacity
-                      key={idx}
-                      style={styles.projectPortalCard}
-                      activeOpacity={0.85}
-                      onPress={() => handleSelectProject(item.projectId)}
-                    >
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <View style={{ flex: 1, paddingRight: 8 }}>
-                          <Text style={styles.portalProjectName}>{item.projectName}</Text>
-                          <Text style={styles.portalCommodity}>{item.materialName}</Text>
-                        </View>
-                        <View style={styles.portalAvailableBadge}>
-                          <Text style={styles.portalAvailableText}>
-                            {item.currentAvailable.toLocaleString()} {item.unit || 'MT'}
-                          </Text>
-                        </View>
-                      </View>
+              )}
 
-                      <View style={styles.portalStatsRow}>
-                        <View>
-                          <Text style={styles.portalStatLabel}>Total Received</Text>
-                          <Text style={styles.portalStatVal}>{item.totalReceived.toLocaleString()} MT</Text>
-                        </View>
-                        <View>
-                          <Text style={styles.portalStatLabel}>Total Dispatched</Text>
-                          <Text style={styles.portalStatVal}>{item.totalIssued.toLocaleString()} MT</Text>
-                        </View>
-                        <View>
-                          <Text style={styles.portalStatLabel}>Last Carrier</Text>
-                          <Text style={styles.portalStatVal}>{item.lastVehicleNumber || 'OD-05-BB-8921'}</Text>
-                        </View>
-                      </View>
+              {/* TAB 2: PROJECT PORTALS LIST */}
+              {yardTab === 'portals' && (
+                <View style={{ gap: 14 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text style={styles.sectionHeaderLabel}>PROJECT-WISE MATERIAL PORTALS</Text>
+                    <Text style={styles.subtextCount}>{projectInventory.length} Projects Deployed</Text>
+                  </View>
 
-                      <View style={styles.portalCardFooter}>
-                        <Text style={styles.portalFooterLink}>Open Inward Turnaround & Balance</Text>
+                  {projectInventory.length === 0 ? (
+                    <View style={styles.emptyCard}>
+                      <Feather name="box" size={32} color="#94A3B8" />
+                      <Text style={styles.emptyTitle}>No Material Portals Active</Text>
+                      <Text style={styles.emptyDesc}>No project materials have been stacked in this stockyard yet.</Text>
+                    </View>
+                  ) : (
+                    projectInventory.map((item, idx) => {
+                      return (
+                        <TouchableOpacity
+                          key={idx}
+                          style={styles.projectPortalCard}
+                          activeOpacity={0.85}
+                          onPress={() => handleSelectProject(item.projectId)}
+                        >
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                            <View style={{ flex: 1, paddingRight: 8 }}>
+                              <Text style={styles.portalProjectName}>{item.projectName}</Text>
+                              <Text style={styles.portalCommodity}>{item.materialName}</Text>
+                            </View>
+                            <View style={styles.portalAvailableBadge}>
+                              <Text style={styles.portalAvailableText}>
+                                {item.currentAvailable.toLocaleString()} {item.unit || 'MT'}
+                              </Text>
+                            </View>
+                          </View>
+
+                          <View style={styles.portalStatsRow}>
+                            <View>
+                              <Text style={styles.portalStatLabel}>Total Received</Text>
+                              <Text style={styles.portalStatVal}>{item.totalReceived.toLocaleString()} MT</Text>
+                            </View>
+                            <View>
+                              <Text style={styles.portalStatLabel}>Total Dispatched</Text>
+                              <Text style={styles.portalStatVal}>{item.totalIssued.toLocaleString()} MT</Text>
+                            </View>
+                            <View>
+                              <Text style={styles.portalStatLabel}>Last Carrier</Text>
+                              <Text style={styles.portalStatVal}>{item.lastVehicleNumber || 'OD-05-BB-8921'}</Text>
+                            </View>
+                          </View>
+
+                          <View style={styles.portalCardFooter}>
+                            <Text style={styles.portalFooterLink}>Open Inward Turnaround & Balance</Text>
                         <Feather name="arrow-right" size={14} color="#00705a" />
                       </View>
                     </TouchableOpacity>
@@ -649,6 +981,8 @@ export default function StockyardScreen({ navigation }: any) {
               )}
             </View>
           )}
+        </View>
+      )}
 
           {/* ==================================================== */}
           {/* VIEW MODE 3: PROJECT-DETAIL (SECTION 1 & BALANCE)    */}
@@ -1812,5 +2146,213 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#FFFFFF',
     textTransform: 'uppercase',
+  },
+  segmentContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 14,
+    padding: 4,
+    gap: 4,
+  },
+  segmentBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  segmentBtnActive: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  segmentBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  segmentBtnTextActive: {
+    color: '#00705a',
+    fontWeight: '900',
+  },
+  stockPointCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 2,
+    gap: 8,
+  },
+  spCodeBadge: {
+    backgroundColor: '#0F172A',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  spCodeBadgeText: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: '#34D399',
+    fontFamily: 'monospace',
+  },
+  spNameText: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#0F172A',
+  },
+  spDescText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
+    marginTop: 2,
+  },
+  spTypeBadge: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  spTypeBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#475569',
+    letterSpacing: 0.5,
+  },
+  spCapLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#64748B',
+    textTransform: 'uppercase',
+  },
+  spCapValue: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  spFlowGrid: {
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 4,
+  },
+  spFlowBox: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 10,
+    paddingVertical: 7,
+    paddingHorizontal: 8,
+  },
+  spFlowLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#64748B',
+    letterSpacing: 0.4,
+  },
+  spFlowVal: {
+    fontSize: 12,
+    fontWeight: '900',
+    marginTop: 2,
+  },
+  spCardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  spStatusText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#10B981',
+  },
+  spHistoryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 8,
+  },
+  spHistoryBtnText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#4F46E5',
+  },
+  spShiftBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    borderRadius: 8,
+  },
+  spShiftBtnText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#00705a',
+  },
+  segmentedTabBtn: {
+    backgroundColor: '#F1F5F9',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  segmentedTabBtnActive: {
+    backgroundColor: '#00705a',
+    borderColor: '#00705a',
+  },
+  segmentedTabText: {
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  segmentedTabTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+  },
+  shiftCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 4,
+  },
+  shiftTypeBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  shiftTypeBadgeText: {
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  shiftCardTitle: {
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  shiftCardQty: {
+    fontWeight: '900',
+  },
+  shiftRouteText: {
+    color: '#475569',
+    fontWeight: '600',
   },
 });

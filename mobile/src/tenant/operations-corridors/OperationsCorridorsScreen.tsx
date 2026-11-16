@@ -110,7 +110,22 @@ export default function OperationsCorridorsScreen({ navigation }: any) {
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data) && data.length > 0) {
-          setCorridors(data);
+          const normalized: Corridor[] = data.map((d: any, idx: number) => ({
+            id: String(d.id || `corr-${idx}`),
+            code: d.code || d.corridorCode || d.corridor_code || `CORR-0${idx + 1}`,
+            name: d.name || 'Industrial Transit Corridor',
+            projectId: d.projectId || d.project_id || '',
+            projectName: d.projectName || d.project_name || 'Infrastructure Project',
+            topology: d.topology || d.topologyType || d.topology_type || 'RELAY MULTIMODAL',
+            totalDistanceKm: Number(d.totalDistanceKm || d.total_distance_km || 0),
+            cycleTimeHours: Number(d.cycleTimeHours || d.estimatedCycleTimeHours || d.estimated_cycle_time_hours || 0),
+            status: d.status || 'Active',
+            activeAssetsCount: Number(d.activeAssetsCount || d.assetsCount || d.assets_count || 0),
+            projectHead: d.projectHead || d.project_head || '',
+            siteInCharge: d.siteInCharge || d.siteManager || d.site_manager || '',
+            legs: Array.isArray(d.legs) ? d.legs : []
+          }));
+          setCorridors(normalized);
         }
       }
     } catch (err) {
@@ -245,21 +260,21 @@ export default function OperationsCorridorsScreen({ navigation }: any) {
                 <View style={styles.metricsRow}>
                   <View style={styles.metricItem}>
                     <Text style={styles.metricLabel}>Total Distance</Text>
-                    <Text style={styles.metricVal}>{c.totalDistanceKm} KM</Text>
+                    <Text style={styles.metricVal}>{Number(c.totalDistanceKm || 0)} KM</Text>
                   </View>
                   <View style={styles.metricItem}>
                     <Text style={styles.metricLabel}>Cycle TAT</Text>
-                    <Text style={styles.metricVal}>~{c.cycleTimeHours.toFixed(1)} Hrs</Text>
+                    <Text style={styles.metricVal}>~{Number(c.cycleTimeHours || 0).toFixed(1)} Hrs</Text>
                   </View>
                   <View style={styles.metricItem}>
                     <Text style={styles.metricLabel}>Active Fleet</Text>
-                    <Text style={styles.metricVal}>{c.activeAssetsCount} Assets</Text>
+                    <Text style={styles.metricVal}>{Number(c.activeAssetsCount || 0)} Assets</Text>
                   </View>
                 </View>
 
                 {/* Route Sequence Pills */}
                 <View style={styles.legsRow}>
-                  {c.legs.map((l, lIdx) => (
+                  {(c.legs || []).map((l, lIdx) => (
                     <View key={lIdx} style={{ flexDirection: 'row', alignItems: 'center' }}>
                       <View style={[styles.legChip, l.mode === 'RAIL' ? styles.legRail : styles.legRoad]}>
                         {l.mode === 'RAIL' ? (
@@ -317,7 +332,7 @@ export default function OperationsCorridorsScreen({ navigation }: any) {
                 <ScrollView style={{ padding: 16 }} contentContainerStyle={{ gap: 14 }}>
                   <Text style={styles.sheetSectionLabel}>ROUTE SEQUENCE BLUEPRINT</Text>
 
-                  {selectedCorridor.legs.map((leg, idx) => (
+                  {(selectedCorridor.legs || []).map((leg, idx) => (
                     <View key={leg.id} style={styles.blueprintLegCard}>
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>

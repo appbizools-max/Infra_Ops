@@ -5,5 +5,5 @@
  *    Look for "IPv4 Address" under your Wi-Fi adapter (e.g. 192.168.1.5)
  *
  */
-export const DEV_MACHINE_IP = '192.168.0.7'; // Updated Wi-Fi IPv4
+export const DEV_MACHINE_IP = '192.168.0.118'; // Updated Wi-Fi IPv4
 export const BACKEND_PORT = 5000;

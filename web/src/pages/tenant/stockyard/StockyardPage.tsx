@@ -96,23 +96,49 @@ interface StockyardRack {
   id: number;
   stockyardId: number;
   rackCode: string;
+  stockPointCode?: string;
   rackName: string;
+  stockPointName?: string;
   locationType: string;
   capacityTons: number;
   currentOccupancyTons?: number;
+  currentAvailableStock?: number;
+  totalReceived?: number;
+  totalIssued?: number;
+  totalCame?: number;
+  totalLeft?: number;
+  storedMaterials?: Array<{
+    materialName: string;
+    projectId?: string;
+    projectName?: string;
+    unit?: string;
+    totalReceived?: number;
+    totalIssued?: number;
+    totalCame?: number;
+    totalLeft?: number;
+    currentAvailable?: number;
+  }>;
   description?: string;
   status: string;
   createdAt?: string;
 }
 
 interface RackInventory {
+  stockPointId?: number;
   rackName: string;
+  stockPointName?: string;
   rackCode: string;
+  stockPointCode?: string;
   locationType: string;
+  capacityTons?: number;
   projectId: string;
   projectName: string;
   materialName: string;
   unit: string;
+  totalReceived?: number;
+  totalIssued?: number;
+  totalCame?: number;
+  totalLeft?: number;
   currentAvailable: number;
   lastUpdated: string;
 }
@@ -635,8 +661,8 @@ export default function StockyardPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [loadingProject, setLoadingProject] = useState(false);
 
-  // Yard Detail Active Tab
-  const [yardActiveTab, setYardActiveTab] = useState<'projects' | 'digital-twin' | 'live-queue' | 'racks' | 'shifts' | 'equipment' | 'ledger' | 'reconciliation'>('projects');
+  // Yard Detail Active Tab (Default to Stock Points & Bays)
+  const [yardActiveTab, setYardActiveTab] = useState<'racks' | 'projects' | 'digital-twin' | 'live-queue' | 'shifts' | 'equipment' | 'ledger' | 'reconciliation'>('racks');
 
   // Heavy Machinery & Equipment States
   const [eligibleEquipment, setEligibleEquipment] = useState<EligibleEquipment[]>([]);
@@ -735,6 +761,11 @@ export default function StockyardPage() {
 
   // Editing Rack State
   const [editingRack, setEditingRack] = useState<StockyardRack | null>(null);
+
+  // Selected Stock Point for In-Page Audit Ledger (Zero Popups)
+  const [selectedPointId, setSelectedPointId] = useState<number | null>(null);
+  const [historyPointTab, setHistoryPointTab] = useState<'ALL' | 'INWARD' | 'OUTWARD' | 'INTERNAL_SHIFT'>('ALL');
+  const [historyPointSearch, setHistoryPointSearch] = useState('');
 
   // Action Loading & Errors
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -2342,6 +2373,17 @@ export default function StockyardPage() {
             {/* Navigation Tabs */}
             <div className="flex items-center gap-2 mt-6 pt-4 border-t border-slate-100 overflow-x-auto pb-1">
               <button
+                onClick={() => setYardActiveTab('racks')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${yardActiveTab === 'racks'
+                  ? 'bg-[#00705a] text-white shadow-sm'
+                  : 'text-slate-600 hover:bg-slate-50'
+                  }`}
+              >
+                <Box size={14} />
+                <span>Stock Points & Bays ({racks.length})</span>
+              </button>
+
+              <button
                 onClick={() => setYardActiveTab('projects')}
                 className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${yardActiveTab === 'projects'
                   ? 'bg-[#00705a] text-white shadow-sm'
@@ -2387,17 +2429,6 @@ export default function StockyardPage() {
                     {activeTrucksInYard.length}
                   </span>
                 )}
-              </button>
-
-              <button
-                onClick={() => setYardActiveTab('racks')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${yardActiveTab === 'racks'
-                  ? 'bg-[#00705a] text-white shadow-sm'
-                  : 'text-slate-600 hover:bg-slate-50'
-                  }`}
-              >
-                <Box size={14} />
-                <span>Racks & Storage Locations ({racks.length})</span>
               </button>
 
               <button
@@ -2566,18 +2597,18 @@ export default function StockyardPage() {
             </div>
           )}
 
-          {/* TAB 3: OPTIONAL RACKS & STORAGE LOCATIONS */}
+          {/* TAB 3: STOCK POINTS & STORAGE BAYS */}
           {yardActiveTab === 'racks' && (
             <div className="space-y-6">
-              {/* Header Card for Rack Management */}
+              {/* Header Card for Stock Points Management */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
                 <div>
                   <div className="flex items-center gap-2">
                     <Box size={18} className="text-[#00705a]" />
-                    <h3 className="text-base font-black text-slate-900">Optional Internal Rack, Stack & Location Management</h3>
+                    <h3 className="text-base font-black text-slate-900">Stock Points & Storage Bays Creation</h3>
                   </div>
                   <p className="text-xs text-slate-500 mt-1">
-                    Manage internal storage locations (Rack A, Stack B, Open Area) within {selectedYard.yardName}. This is completely optional.
+                    Configure stock points (Bays, Stacks, Silos, Bins, Open Storage) in {selectedYard.yardName} and monitor live stock inventory stored at each point.
                   </p>
                 </div>
 
@@ -2596,8 +2627,8 @@ export default function StockyardPage() {
                       setEditingRack(null);
                       setRackForm({
                         rackName: '',
-                        rackCode: `RCK-${Math.floor(100 + Math.random() * 900)}`,
-                        locationType: 'Rack',
+                        rackCode: `SP-0${racks.length + 1}`,
+                        locationType: 'Bay',
                         capacityTons: '10000',
                         description: '',
                         status: 'Active'
@@ -2607,128 +2638,710 @@ export default function StockyardPage() {
                     className="flex items-center gap-1.5 bg-[#00705a] hover:bg-[#005a48] text-white text-xs font-black uppercase tracking-wider px-3.5 py-2 rounded-xl shadow-sm transition-all"
                   >
                     <Plus size={14} />
-                    <span>Add Location / Rack</span>
+                    <span>+ Create Stock Point</span>
                   </button>
                 </div>
               </div>
 
-              {/* Racks Cards Grid */}
+              {/* Stock Points Cards Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {racks.map(rack => (
-                  <div key={rack.id} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="px-2.5 py-0.5 rounded-lg text-xs font-black bg-indigo-50 text-indigo-800 border border-indigo-200">
-                        {rack.rackCode}
-                      </span>
-                      <span className="text-[10px] font-bold text-slate-400 uppercase">
-                        {rack.locationType || 'Rack'}
-                      </span>
-                    </div>
+                {racks.map(rack => {
+                  const activePointId = selectedPointId || (racks.length > 0 ? racks[0].id : null);
+                  const isSelected = activePointId === rack.id;
+                  const storedAtPoint = (rack.storedMaterials && rack.storedMaterials.length > 0)
+                    ? rack.storedMaterials
+                    : rackInventory.filter(
+                        item => (item.rackName?.toLowerCase() === rack.rackName?.toLowerCase()) ||
+                                (item.rackCode?.toLowerCase() === rack.rackCode?.toLowerCase())
+                      );
+                  const currentOcc = parseFloat(String(rack.currentOccupancyTons ?? rack.currentAvailableStock ?? 0)) ||
+                    storedAtPoint.reduce((sum: number, item: any) => sum + (Number(item.currentAvailable) || 0), 0);
+                  const totalCame = parseFloat(String(rack.totalCame ?? rack.totalReceived ?? 0)) ||
+                    storedAtPoint.reduce((sum: number, item: any) => sum + (Number(item.totalCame || item.totalReceived) || 0), 0) || currentOcc;
+                  const totalLeft = parseFloat(String(rack.totalLeft ?? rack.totalIssued ?? 0)) ||
+                    storedAtPoint.reduce((sum: number, item: any) => sum + (Number(item.totalLeft || item.totalIssued) || 0), 0) || 0;
+                  const occPct = rack.capacityTons > 0 ? Math.min(100, Math.round((currentOcc / rack.capacityTons) * 100)) : 0;
+                  const freeCap = Math.max(0, rack.capacityTons - currentOcc);
 
-                    <div>
-                      <div className="font-black text-slate-900 text-sm">{rack.rackName}</div>
-                      <div className="text-xs text-slate-500 font-medium mt-0.5">{rack.description || 'Dedicated project material location'}</div>
-                    </div>
+                  return (
+                    <div
+                      key={rack.id}
+                      onClick={() => setSelectedPointId(rack.id)}
+                      className={`rounded-2xl border p-5 space-y-4 transition-all flex flex-col justify-between cursor-pointer group ${
+                        isSelected
+                          ? 'bg-emerald-50/20 border-[#00705a] ring-2 ring-[#00705a] shadow-md'
+                          : 'bg-white border-slate-200 hover:border-slate-300 shadow-sm'
+                      }`}
+                    >
+                      <div className="space-y-3.5">
+                        {/* Header: Code + Name + Type */}
+                        <div className="flex items-center justify-between">
+                          <span className={`px-2.5 py-0.5 rounded-lg text-xs font-black font-mono border ${
+                            isSelected
+                              ? 'bg-[#00705a] text-white border-[#00705a]'
+                              : 'bg-slate-900 text-[#34D399] border-slate-800'
+                          }`}>
+                            {rack.rackCode || rack.stockPointCode}
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-bold text-slate-600 uppercase bg-slate-100 px-2.5 py-0.5 rounded-md border border-slate-200">
+                              {rack.locationType || 'Bay'}
+                            </span>
+                            {isSelected ? (
+                              <span className="text-[10px] font-black text-white bg-[#00705a] px-2.5 py-0.5 rounded-md shadow-2xs">
+                                ✓ Viewing Ledger Below
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-bold text-slate-500 bg-slate-100 group-hover:bg-emerald-50 group-hover:text-[#00705a] px-2 py-0.5 rounded-md transition-colors">
+                                Select Point ↓
+                              </span>
+                            )}
+                          </div>
+                        </div>
 
-                    <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
-                      <span className="text-slate-500 font-bold">Capacity: {rack.capacityTons.toLocaleString()} MT</span>
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${rack.status === 'Active' ? 'bg-emerald-50 text-[#00705a]' : 'bg-slate-100 text-slate-500'}`}>
-                        {rack.status}
-                      </span>
-                    </div>
+                        <div>
+                          <div className="font-black text-slate-900 text-base flex items-center justify-between">
+                            <span>{rack.rackName || rack.stockPointName}</span>
+                            {isSelected && (
+                              <span className="text-[11px] font-black text-[#00705a] uppercase tracking-wider">Active</span>
+                            )}
+                          </div>
+                          <div className="text-xs text-slate-500 font-medium mt-0.5">{rack.description || 'Dedicated storage bay in stockyard'}</div>
+                        </div>
 
-                    <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-                      <button
-                        onClick={() => {
-                          setEditingRack(rack);
-                          setRackForm({
-                            rackName: rack.rackName,
-                            rackCode: rack.rackCode,
-                            locationType: rack.locationType,
-                            capacityTons: String(rack.capacityTons),
-                            description: rack.description || '',
-                            status: rack.status
-                          });
-                          setIsAddRackModalOpen(true);
-                        }}
-                        className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
-                        title="Edit rack"
-                      >
-                        <Edit2 size={13} />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteRack(rack.id)}
-                        className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors"
-                        title="Delete rack"
-                      >
-                        <Trash2 size={13} />
-                      </button>
+                        {/* Capacity Meter */}
+                        <div>
+                          <div className="flex justify-between text-[11px] font-bold text-slate-600 mb-1">
+                            <span>Capacity Utilization</span>
+                            <span className="text-slate-900 font-extrabold">{currentOcc.toLocaleString()} / {rack.capacityTons.toLocaleString()} MT ({occPct}%)</span>
+                          </div>
+                          <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                            <div
+                              className={`h-2 rounded-full transition-all ${occPct > 85 ? 'bg-rose-500' : occPct > 60 ? 'bg-amber-500' : 'bg-[#00705a]'}`}
+                              style={{ width: `${occPct}%` }}
+                            />
+                          </div>
+                          <div className="flex justify-between text-[10px] text-slate-400 mt-1 font-semibold">
+                            <span>{freeCap.toLocaleString()} MT free space</span>
+                            <span>{rack.capacityTons.toLocaleString()} MT max</span>
+                          </div>
+                        </div>
+
+                        {/* 3-Box Flow Summary: Came | Left | Current On Hand */}
+                        <div className="grid grid-cols-3 gap-2 pt-1">
+                          <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-2.5">
+                            <div className="text-[9px] font-black uppercase tracking-wider text-slate-500">📥 CAME (RECV)</div>
+                            <div className="text-xs font-black text-[#00705a] mt-0.5">
+                              +{Number(totalCame).toLocaleString()} MT
+                            </div>
+                          </div>
+                          <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-2.5">
+                            <div className="text-[9px] font-black uppercase tracking-wider text-slate-500">📤 LEFT (DISP)</div>
+                            <div className="text-xs font-black text-rose-600 mt-0.5">
+                              -{Number(totalLeft).toLocaleString()} MT
+                            </div>
+                          </div>
+                          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-2.5">
+                            <div className="text-[9px] font-black uppercase tracking-wider text-[#00705a]">📦 ON HAND</div>
+                            <div className="text-xs font-black text-[#00705a] mt-0.5">
+                              {Number(currentOcc).toLocaleString()} MT
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Stored Materials & Projects Breakdown */}
+                        <div className="bg-slate-50/80 rounded-xl p-3 border border-slate-100 space-y-2">
+                          <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider text-[#00705a]">
+                            <div className="flex items-center gap-1.5">
+                              <Box size={12} />
+                              <span>Material & Project Breakdown</span>
+                            </div>
+                            <span className="text-slate-500 font-bold">
+                              {storedAtPoint.length} {storedAtPoint.length === 1 ? 'Commodity' : 'Commodities'}
+                            </span>
+                          </div>
+
+                          {storedAtPoint.length > 0 ? (
+                            <div className="space-y-2">
+                              {storedAtPoint.map((m: any, mIdx: number) => {
+                                const mCame = parseFloat(m.totalCame) || parseFloat(m.totalReceived) || Number(m.quantity || m.currentAvailable || currentOcc);
+                                const mLeft = parseFloat(m.totalLeft) || parseFloat(m.totalIssued) || 0;
+                                const mAvail = parseFloat(m.currentAvailable) || Number(m.quantity || currentOcc);
+
+                                return (
+                                  <div key={mIdx} className="bg-white p-2.5 rounded-lg border border-slate-200/80 space-y-2">
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div className="min-w-0">
+                                        <div className="font-black text-slate-900 text-xs truncate">{m.materialName}</div>
+                                        <div className="text-[11px] font-bold text-slate-600 mt-0.5 truncate">
+                                          Project: <span className="text-[#00705a]">{m.projectName || 'Infrastructure Project'}</span>
+                                        </div>
+                                      </div>
+                                      <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-[#00705a] font-black text-xs shrink-0">
+                                        {mAvail.toLocaleString()} {m.unit || 'MT'}
+                                      </span>
+                                    </div>
+
+                                    {/* Flow row for material */}
+                                    <div className="grid grid-cols-3 gap-1 pt-1.5 border-t border-slate-100 text-[10px]">
+                                      <div>
+                                        <span className="text-slate-400 font-bold block">Came:</span>
+                                        <span className="font-extrabold text-[#00705a]">+{mCame.toLocaleString()}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-slate-400 font-bold block">Left:</span>
+                                        <span className="font-extrabold text-rose-600">-{mLeft.toLocaleString()}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-slate-400 font-bold block">On Hand:</span>
+                                        <span className="font-extrabold text-slate-900">{mAvail.toLocaleString()}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : currentOcc > 0 ? (
+                            <div className="bg-white p-2.5 rounded-lg border border-slate-200/80 space-y-2">
+                              <div className="flex items-center justify-between text-xs">
+                                <div>
+                                  <div className="font-bold text-slate-900">Bulk Aggregate / Ballast</div>
+                                  <div className="text-[10px] text-slate-400">Current Occupancy</div>
+                                </div>
+                                <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-[#00705a] font-black text-xs">
+                                  {currentOcc.toLocaleString()} MT
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-3 gap-1 pt-1.5 border-t border-slate-100 text-[10px]">
+                                <div>
+                                  <span className="text-slate-400 font-bold block">Came:</span>
+                                  <span className="font-extrabold text-[#00705a]">+{Number(totalCame).toLocaleString()}</span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-400 font-bold block">Left:</span>
+                                  <span className="font-extrabold text-rose-600">-{Number(totalLeft).toLocaleString()}</span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-400 font-bold block">On Hand:</span>
+                                  <span className="font-extrabold text-slate-900">{currentOcc.toLocaleString()}</span>
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1.5 text-[11px] text-slate-400 py-1">
+                              <CheckCircle2 size={13} className="text-emerald-500" />
+                              <span>Empty Point • Available for receipt or internal shift</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Card Footer: Quick Shift + Status (No Edit/Delete buttons) */}
+                      <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${rack.status === 'Active' ? 'bg-emerald-50 text-[#00705a]' : 'bg-slate-100 text-slate-500'}`}>
+                            {rack.status}
+                          </span>
+                          {isSelected && (
+                            <span className="text-[11px] font-black text-[#00705a]">
+                              ● Selected Point
+                            </span>
+                          )}
+                        </div>
+
+                        {currentOcc > 0 && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenShiftModal(storedAtPoint[0]?.projectId, storedAtPoint[0]?.materialName, rack.rackName);
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-[#00705a] text-[#00705a] hover:text-white font-bold text-xs transition-colors cursor-pointer"
+                          >
+                            <ArrowLeftRight size={12} />
+                            <span>Shift Stock</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
-              {/* Rack-Wise Inventory Table */}
+              {/* IN-PAGE DEDICATED AUDIT LEDGER CONSOLE FOR SELECTED STOCK POINT (ZERO POPUPS) */}
+              {(() => {
+                const activeRack = racks.find(r => r.id === (selectedPointId || (racks.length > 0 ? racks[0].id : null))) || racks[0];
+                if (!activeRack) return null;
+
+                const pointCode = activeRack.rackCode || activeRack.stockPointCode || 'SP-01';
+                const pointName = activeRack.rackName || activeRack.stockPointName;
+                const storedMaterials = (activeRack.storedMaterials && activeRack.storedMaterials.length > 0)
+                  ? activeRack.storedMaterials
+                  : rackInventory.filter(ri => ri.rackName?.toLowerCase() === pointName.toLowerCase() || ri.rackCode === pointCode);
+
+                const currentOcc = parseFloat(String(activeRack.currentOccupancyTons ?? activeRack.currentAvailableStock ?? 0)) ||
+                  storedMaterials.reduce((sum, m) => sum + (Number(m.currentAvailable) || 0), 0);
+
+                const totalCame = parseFloat(String(activeRack.totalCame ?? activeRack.totalReceived ?? 0)) ||
+                  storedMaterials.reduce((sum, m) => sum + (Number(m.totalCame || m.totalReceived) || 0), 0) || currentOcc;
+
+                const totalLeft = parseFloat(String(activeRack.totalLeft ?? activeRack.totalIssued ?? 0)) ||
+                  storedMaterials.reduce((sum, m) => sum + (Number(m.totalLeft || m.totalIssued) || 0), 0) || 0;
+
+                const capTons = activeRack.capacityTons || 10000;
+                const occPct = capTons > 0 ? Math.min(100, Math.round((currentOcc / capTons) * 100)) : 0;
+                const freeCap = Math.max(0, capTons - currentOcc);
+
+                const allPointTx = transactions.filter(t =>
+                  t.rackId === activeRack.id ||
+                  t.destinationRackId === activeRack.id ||
+                  (t.rackName && t.rackName.toLowerCase() === pointName.toLowerCase()) ||
+                  (t.destinationRackName && t.destinationRackName.toLowerCase() === pointName.toLowerCase())
+                );
+
+                const filteredTx = allPointTx.filter(t => {
+                  if (historyPointTab === 'INWARD' && t.transactionType !== 'INWARD') return false;
+                  if (historyPointTab === 'OUTWARD' && t.transactionType !== 'OUTWARD') return false;
+                  if (historyPointTab === 'INTERNAL_SHIFT' && t.transactionType !== 'INTERNAL_SHIFT') return false;
+
+                  if (historyPointSearch) {
+                    const q = historyPointSearch.toLowerCase();
+                    const str = `${t.vehicleNumber || ''} ${t.driverName || ''} ${t.supplierName || ''} ${t.sourceLocation || ''} ${t.materialName || ''} ${t.weighbridgeSlipNumber || ''} ${t.grnNumber || ''}`.toLowerCase();
+                    if (!str.includes(q)) return false;
+                  }
+                  return true;
+                });
+
+                const inwardCount = allPointTx.filter(t => t.transactionType === 'INWARD').length;
+                const outwardCount = allPointTx.filter(t => t.transactionType === 'OUTWARD').length;
+                const shiftCount = allPointTx.filter(t => t.transactionType === 'INTERNAL_SHIFT').length;
+
+                return (
+                  <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden space-y-6 p-6">
+                    {/* Header Bar */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-100">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-2xl bg-[#00705a] text-white flex items-center justify-center font-black shadow-xs">
+                          <Box size={20} />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-xs font-black px-2 py-0.5 rounded-md bg-[#34D399] text-slate-950">
+                              {pointCode}
+                            </span>
+                            <h4 className="text-base font-black text-slate-900 tracking-tight">{pointName}</h4>
+                            <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
+                              {activeRack.locationType || 'Bay'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            Live Audit Ledger & Movement Trail • Click any card above to switch points
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const autoProj = storedMaterials[0]?.projectId || projects[0]?.projectId || projects[0]?.id;
+                            const autoMat = storedMaterials[0]?.materialName || 'Track Ballast 40mm';
+                            handleOpenShiftModal(autoProj, autoMat, pointName);
+                          }}
+                          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all cursor-pointer shadow-xs"
+                        >
+                          <ArrowLeftRight size={13} />
+                          <span>Shift From Here</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setReceiveVehicleForm(prev => ({
+                              ...prev,
+                              rackName: pointName,
+                              rackId: String(activeRack.id)
+                            }));
+                            setIsReceiveVehicleModalOpen(true);
+                          }}
+                          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#00705a] hover:bg-[#005a48] text-white text-xs font-bold transition-all cursor-pointer shadow-xs"
+                        >
+                          <ArrowDownLeft size={13} />
+                          <span>Receive Into Point</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* 6-Metric Mini Grid */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 text-center">
+                        <span className="text-[10px] font-bold text-slate-500 uppercase block">Total Capacity</span>
+                        <span className="text-sm font-black text-slate-900 mt-0.5 block">{capTons.toLocaleString()} MT</span>
+                      </div>
+
+                      <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-3 text-center">
+                        <span className="text-[10px] font-bold text-[#00705a] uppercase block">Physical Stock</span>
+                        <span className="text-sm font-black text-[#00705a] mt-0.5 block">{currentOcc.toLocaleString()} MT</span>
+                      </div>
+
+                      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 text-center">
+                        <span className="text-[10px] font-bold text-slate-500 uppercase block">Free Space</span>
+                        <span className="text-sm font-black text-emerald-700 mt-0.5 block">{freeCap.toLocaleString()} MT</span>
+                      </div>
+
+                      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 text-center">
+                        <span className="text-[10px] font-bold text-slate-500 uppercase block">Total Came (Recv)</span>
+                        <span className="text-sm font-black text-[#00705a] mt-0.5 block">+{Number(totalCame).toLocaleString()} MT</span>
+                      </div>
+
+                      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 text-center">
+                        <span className="text-[10px] font-bold text-slate-500 uppercase block">Total Left (Disp)</span>
+                        <span className="text-sm font-black text-rose-600 mt-0.5 block">-{Number(totalLeft).toLocaleString()} MT</span>
+                      </div>
+
+                      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 text-center">
+                        <span className="text-[10px] font-bold text-slate-500 uppercase block">Utilization</span>
+                        <span className={`text-sm font-black mt-0.5 block ${occPct > 85 ? 'text-rose-600' : occPct > 60 ? 'text-amber-600' : 'text-[#00705a]'}`}>
+                          {occPct}%
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Stored Commodities & Projects at this Point */}
+                    <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                          <Box size={14} className="text-[#00705a]" />
+                          <span>Stored Materials & Project Affiliations at {pointName}</span>
+                        </span>
+                        <span className="text-[11px] font-bold text-slate-500">
+                          {storedMaterials.length} {storedMaterials.length === 1 ? 'Commodity' : 'Commodities'}
+                        </span>
+                      </div>
+
+                      {storedMaterials.length > 0 ? (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                          {storedMaterials.map((m, mIdx) => {
+                            const mAvail = parseFloat(String(m.currentAvailable ?? 0)) || currentOcc;
+                            const mCame = parseFloat(String(m.totalCame ?? m.totalReceived ?? 0)) || mAvail;
+                            const mLeft = parseFloat(String(m.totalLeft ?? m.totalIssued ?? 0)) || 0;
+
+                            return (
+                              <div key={mIdx} className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs space-y-2">
+                                <div className="flex items-start justify-between gap-2">
+                                  <div>
+                                    <div className="font-black text-slate-900 text-xs">{m.materialName}</div>
+                                    <div className="text-[11px] font-bold text-[#00705a] mt-0.5">
+                                      {m.projectName || 'Infrastructure Project'}
+                                    </div>
+                                  </div>
+                                  <span className="px-2 py-0.5 bg-emerald-50 text-[#00705a] font-black text-xs rounded-md shrink-0">
+                                    {mAvail.toLocaleString()} {m.unit || 'MT'}
+                                  </span>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-1 pt-2 border-t border-slate-100 text-[10px]">
+                                  <div>
+                                    <span className="text-slate-400 font-bold block">Inward Came:</span>
+                                    <span className="font-extrabold text-[#00705a]">+{mCame.toLocaleString()} {m.unit || 'MT'}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-slate-400 font-bold block">Outward Left:</span>
+                                    <span className="font-extrabold text-rose-600">-{mLeft.toLocaleString()} {m.unit || 'MT'}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="py-4 text-center text-slate-400 text-xs">
+                          No material batches currently logged at this stock point.
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Filter Tabs & Search Bar */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+                      <div className="flex items-center gap-1.5 overflow-x-auto">
+                        {[
+                          { key: 'ALL', label: `All Movements (${allPointTx.length})` },
+                          { key: 'INWARD', label: `📥 Inward Receipts (${inwardCount})` },
+                          { key: 'OUTWARD', label: `📤 Outward Dispatches (${outwardCount})` },
+                          { key: 'INTERNAL_SHIFT', label: `↔️ Shifts (${shiftCount})` }
+                        ].map(tab => (
+                          <button
+                            key={tab.key}
+                            type="button"
+                            onClick={() => setHistoryPointTab(tab.key as any)}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+                              historyPointTab === tab.key
+                                ? 'bg-[#00705a] text-white shadow-xs'
+                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}
+                          >
+                            {tab.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="relative sm:w-64">
+                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                          type="text"
+                          placeholder="Filter trips, vehicle, pilot, slip..."
+                          value={historyPointSearch}
+                          onChange={e => setHistoryPointSearch(e.target.value)}
+                          className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Complete Trips & Movement Table */}
+                    <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-2xs">
+                      {filteredTx.length === 0 ? (
+                        <div className="py-12 text-center text-slate-400 text-xs space-y-2">
+                          <Clock size={32} className="mx-auto text-slate-300" />
+                          <p className="font-bold text-slate-600">No trips or movements recorded for this filter</p>
+                          <p className="text-[11px] text-slate-400">Incoming vehicles, dispatches, and internal shifts to/from {pointName} will appear here.</p>
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left border-collapse text-xs">
+                            <thead>
+                              <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-500">
+                                <th className="py-3 px-4">Date & Time</th>
+                                <th className="py-3 px-4">Type</th>
+                                <th className="py-3 px-4">Carrier & Vehicle</th>
+                                <th className="py-3 px-4">Project & Material</th>
+                                <th className="py-3 px-4">Source / Destination</th>
+                                <th className="py-3 px-4 text-right">Weighbridge (Gross / Tare / Net)</th>
+                                <th className="py-3 px-4 text-right">Documents</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {filteredTx.map((tx, idx) => {
+                                const isShift = tx.transactionType === 'INTERNAL_SHIFT';
+                                const isInward = tx.transactionType === 'INWARD';
+                                const isOutward = tx.transactionType === 'OUTWARD';
+
+                                return (
+                                  <tr key={tx.id || idx} className="hover:bg-slate-50/80 transition-colors">
+                                    <td className="py-3 px-4 whitespace-nowrap">
+                                      <div className="font-bold text-slate-800">
+                                        {new Date(tx.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                      </div>
+                                      <div className="text-[10px] text-slate-400 font-mono">
+                                        {new Date(tx.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                                      </div>
+                                    </td>
+
+                                    <td className="py-3 px-4">
+                                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${
+                                        isInward
+                                          ? 'bg-emerald-50 text-[#00705a] border border-emerald-200'
+                                          : isOutward
+                                          ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                          : 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                                      }`}>
+                                        {isInward ? <ArrowDownLeft size={10} /> : isOutward ? <ArrowUpRight size={10} /> : <ArrowLeftRight size={10} />}
+                                        <span>{tx.transactionType.replace('_', ' ')}</span>
+                                      </span>
+                                    </td>
+
+                                    <td className="py-3 px-4">
+                                      <div className="font-mono font-black text-slate-900 text-xs flex items-center gap-1">
+                                        {tx.transportMode === 'RAIL_RAKE' ? <Train size={12} className="text-indigo-600" /> : <Truck size={12} className="text-[#00705a]" />}
+                                        <span>{tx.vehicleNumber || 'Yard Relocation'}</span>
+                                      </div>
+                                      {tx.driverName && (
+                                        <div className="text-[10px] text-slate-500 font-medium">
+                                          {tx.driverName} {tx.driverPhone ? `• ${tx.driverPhone}` : ''}
+                                        </div>
+                                      )}
+                                    </td>
+
+                                    <td className="py-3 px-4">
+                                      <div className="font-black text-slate-900">{tx.materialName}</div>
+                                      <div className="text-[10px] font-semibold text-slate-500">{tx.projectName}</div>
+                                    </td>
+
+                                    <td className="py-3 px-4">
+                                      {isShift ? (
+                                        <div className="text-xs">
+                                          <span className="text-slate-400">From:</span> <strong className="text-slate-800">{tx.sourceLocation || tx.rackName || pointName}</strong>
+                                          <br />
+                                          <span className="text-slate-400">To:</span> <strong className="text-indigo-700">{tx.destinationLocation || tx.destinationRackName || 'Destination'}</strong>
+                                        </div>
+                                      ) : isInward ? (
+                                        <div className="text-xs">
+                                          <span className="text-slate-400">From:</span> <strong className="text-slate-800">{tx.sourceLocation || 'Quarry Pit'}</strong>
+                                          {tx.supplierName && (
+                                            <div className="text-[10px] text-slate-500">{tx.supplierName}</div>
+                                          )}
+                                        </div>
+                                      ) : (
+                                        <div className="text-xs">
+                                          <span className="text-slate-400">To:</span> <strong className="text-slate-800">{tx.destinationLocation || tx.projectName}</strong>
+                                        </div>
+                                      )}
+                                    </td>
+
+                                    <td className="py-3 px-4 text-right">
+                                      <div className={`font-black text-xs ${isInward ? 'text-[#00705a]' : isOutward ? 'text-rose-600' : 'text-indigo-700'}`}>
+                                        {isInward ? '+' : isOutward ? '-' : '↔ '}{Number(tx.quantity).toFixed(2)} {tx.unit || 'MT'}
+                                      </div>
+                                      {(tx.grossWeight || tx.tareWeight) && (
+                                        <div className="text-[10px] text-slate-400 font-mono">
+                                          G: {tx.grossWeight} / T: {tx.tareWeight}
+                                        </div>
+                                      )}
+                                      {tx.weighbridgeSlipNumber && (
+                                        <div className="text-[9px] text-slate-400">
+                                          Slip: {tx.weighbridgeSlipNumber}
+                                        </div>
+                                      )}
+                                    </td>
+
+                                    <td className="py-3 px-4 text-right whitespace-nowrap">
+                                      {tx.grnNumber ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setActiveGrnReceipt(tx);
+                                            setIsGrnSlipModalOpen(true);
+                                          }}
+                                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-[#00705a] text-[#00705a] hover:text-white font-bold text-[10px] uppercase transition-colors cursor-pointer"
+                                        >
+                                          <FileText size={11} />
+                                          <span>GRN Slip</span>
+                                        </button>
+                                      ) : (
+                                        <span className="text-[10px] text-slate-400 font-mono">
+                                          {tx.waybillNumber || tx.challanNumber || 'Internal'}
+                                        </span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* All Stock Points Summary Table */}
               <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
                 <div className="p-5 border-b border-slate-100 flex items-center justify-between">
                   <div>
                     <h4 className="text-xs font-black uppercase tracking-wider text-slate-800">
-                      Rack-Wise Material Inventory Breakdown
+                      All Stock Points Master Table
                     </h4>
                     <p className="text-[11px] text-slate-400 mt-0.5">
-                      Inventory tracked by storage location. Total stockyard inventory remains constant across internal shifts.
+                      Click any row to switch the Live Audit Ledger above to that stock point.
                     </p>
                   </div>
                 </div>
 
                 {rackInventory.length === 0 ? (
                   <div className="py-12 text-center text-slate-400 text-xs">
-                    No rack-assigned material yet. Racks are optional — materials received without rack selection appear under open storage.
+                    No material stock logged at stock points yet. New inward receipts and shifts will appear here automatically.
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse text-xs">
                       <thead>
                         <tr className="bg-slate-50/75 border-b border-slate-200 text-[11px] font-black uppercase tracking-wider text-slate-500">
-                          <th className="py-3 px-6">Storage Location / Rack</th>
-                          <th className="py-3 px-6">Project Name</th>
+                          <th className="py-3 px-6">Stock Point / Bay</th>
+                          <th className="py-3 px-6">Related Project</th>
                           <th className="py-3 px-6">Material Commodity</th>
+                          <th className="py-3 px-6 text-right">Came (Recv)</th>
+                          <th className="py-3 px-6 text-right">Left (Disp)</th>
                           <th className="py-3 px-6 text-right">Available Stock</th>
                           <th className="py-3 px-6 text-right">Action</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {rackInventory.map((item, idx) => (
-                          <tr key={idx} className="hover:bg-slate-50/75 transition-colors">
-                            <td className="py-3.5 px-6">
-                              <span className="font-black text-slate-900">{item.rackName}</span>
-                              <div className="text-[10px] text-slate-400 font-bold">{item.rackCode}</div>
-                            </td>
+                        {rackInventory.map((item, idx) => {
+                          const iCame = parseFloat(String(item.totalCame ?? item.totalReceived ?? 0)) || item.currentAvailable;
+                          const iLeft = parseFloat(String(item.totalLeft ?? item.totalIssued ?? 0)) || 0;
+                          const matchRack = racks.find(r => r.rackName === (item.stockPointName || item.rackName) || r.id === item.stockPointId);
+                          const isRowActive = matchRack && (selectedPointId === matchRack.id || (!selectedPointId && racks[0]?.id === matchRack.id));
 
-                            <td className="py-3.5 px-6">
-                              <div className="font-bold text-slate-900">{item.projectName}</div>
-                              <div className="text-[10px] text-slate-400">{item.projectId}</div>
-                            </td>
+                          return (
+                            <tr
+                              key={idx}
+                              onClick={() => {
+                                if (matchRack) setSelectedPointId(matchRack.id);
+                              }}
+                              className={`cursor-pointer transition-colors ${
+                                isRowActive ? 'bg-emerald-50/60 font-semibold' : 'hover:bg-slate-50/75'
+                              }`}
+                            >
+                              <td className="py-3.5 px-6">
+                                <span className="font-black text-slate-900">{item.stockPointName || item.rackName}</span>
+                                <div className="text-[10px] text-slate-400 font-bold">{item.stockPointCode || item.rackCode}</div>
+                              </td>
 
-                            <td className="py-3.5 px-6 font-semibold text-slate-700">
-                              {item.materialName}
-                            </td>
+                              <td className="py-3.5 px-6">
+                                <div className="font-bold text-slate-900">{item.projectName}</div>
+                                <div className="text-[10px] text-slate-400">{item.projectId}</div>
+                              </td>
 
-                            <td className="py-3.5 px-6 text-right font-black text-indigo-700 text-sm">
-                              {item.currentAvailable.toLocaleString()} {item.unit}
-                            </td>
+                              <td className="py-3.5 px-6 font-semibold text-slate-700">
+                                {item.materialName}
+                              </td>
 
-                            <td className="py-3.5 px-6 text-right">
-                              <button
-                                onClick={() => handleOpenShiftModal(item.projectId, item.materialName, item.rackName)}
-                                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white font-bold text-xs transition-colors"
-                              >
-                                <ArrowLeftRight size={12} />
-                                <span>Shift Stock</span>
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
+                              <td className="py-3.5 px-6 text-right font-black text-[#00705a]">
+                                +{iCame.toLocaleString()} {item.unit}
+                              </td>
+
+                              <td className="py-3.5 px-6 text-right font-black text-rose-600">
+                                -{iLeft.toLocaleString()} {item.unit}
+                              </td>
+
+                              <td className="py-3.5 px-6 text-right font-black text-[#00705a] text-sm">
+                                {item.currentAvailable.toLocaleString()} {item.unit}
+                              </td>
+
+                              <td className="py-3.5 px-6 text-right">
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (matchRack) setSelectedPointId(matchRack.id);
+                                    }}
+                                    className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl font-bold text-xs transition-colors cursor-pointer ${
+                                      isRowActive
+                                        ? 'bg-[#00705a] text-white'
+                                        : 'bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white'
+                                    }`}
+                                    title="View ledger in panel above"
+                                  >
+                                    <History size={12} />
+                                    <span>{isRowActive ? 'Active' : 'View Ledger'}</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleOpenShiftModal(item.projectId, item.materialName, item.stockPointName || item.rackName);
+                                    }}
+                                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-[#00705a] text-[#00705a] hover:text-white font-bold text-xs transition-colors cursor-pointer"
+                                  >
+                                    <ArrowLeftRight size={12} />
+                                    <span>Shift</span>
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -4759,15 +5372,15 @@ export default function StockyardPage() {
 
                                 <td className="py-3.5 px-4 text-right">
                                   <div className="font-bold text-slate-800">
-                                    {rec.grossWeight ? `${rec.grossWeight.toFixed(2)} MT` : '—'}
+                                    {rec.grossWeight != null ? `${Number(rec.grossWeight).toFixed(2)} MT` : '—'}
                                   </div>
                                   <div className="text-[10px] text-slate-400">
-                                    Tare: {rec.tareWeight ? `${rec.tareWeight.toFixed(2)} MT` : '—'}
+                                    Tare: {rec.tareWeight != null ? `${Number(rec.tareWeight).toFixed(2)} MT` : '—'}
                                   </div>
                                 </td>
 
                                 <td className="py-3.5 px-4 text-right font-black text-emerald-800 text-sm">
-                                  {rec.quantity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-[10px] text-slate-500 font-bold">{rec.unit || 'MT'}</span>
+                                  {Number(rec.quantity || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-[10px] text-slate-500 font-bold">{rec.unit || 'MT'}</span>
                                 </td>
 
                                 <td className="py-3.5 px-4 text-right font-black text-[#00705a] text-xs bg-emerald-50/40">
@@ -5295,34 +5908,92 @@ export default function StockyardPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                   {rackInventory
                     .filter(r => r.projectId === selectedProjectId)
-                    .map((r, idx) => (
-                      <div key={idx} className="p-5 rounded-2xl border border-slate-200 bg-slate-50/60 hover:bg-white hover:border-indigo-500/50 hover:shadow-md transition-all space-y-3.5">
-                        <div className="flex items-center justify-between">
-                          <span className="px-2.5 py-1 rounded-lg text-xs font-black bg-indigo-50 text-indigo-800 border border-indigo-200 flex items-center gap-1.5">
-                            <Box size={13} className="text-indigo-600" />
-                            <span>{r.rackName}</span>
-                          </span>
-                          <span className="text-[10px] font-bold text-slate-400 uppercase bg-slate-200/80 px-2 py-0.5 rounded">{r.rackCode}</span>
-                        </div>
+                    .map((r, idx) => {
+                      const matchingRack = racks.find(rk => rk.rackName === r.rackName || rk.id === r.stockPointId);
+                      const rCame = parseFloat(String(r.totalCame ?? r.totalReceived ?? 0)) || r.currentAvailable;
+                      const rLeft = parseFloat(String(r.totalLeft ?? r.totalIssued ?? 0)) || 0;
 
-                        <div className="text-xs font-bold text-slate-800">{r.materialName}</div>
-
-                        <div className="pt-2 border-t border-slate-200 flex items-center justify-between">
-                          <span className="text-[10px] font-bold text-slate-400 uppercase">Available in this Rack</span>
-                          <span className="text-lg font-black text-indigo-900">
-                            {r.currentAvailable.toLocaleString()} <span className="text-xs font-bold text-slate-500">{r.unit}</span>
-                          </span>
-                        </div>
-
-                        <button
-                          onClick={() => handleOpenShiftModal(selectedProjectId, r.rackName)}
-                          className="w-full py-1.5 text-center text-[11px] font-bold text-indigo-700 bg-indigo-50/60 hover:bg-indigo-100 rounded-xl border border-indigo-200 transition-colors flex items-center justify-center gap-1"
+                      return (
+                        <div
+                          key={idx}
+                          onClick={() => {
+                            if (matchingRack) {
+                              setSelectedPointId(matchingRack.id);
+                              setViewMode('yard-detail');
+                              setYardActiveTab('racks');
+                            }
+                          }}
+                          className="p-5 rounded-2xl border border-slate-200 bg-slate-50/60 hover:bg-white hover:border-indigo-500/50 hover:shadow-md transition-all space-y-3.5 cursor-pointer group"
                         >
-                          <span>Shift Out From Here</span>
-                          <ArrowRight size={12} />
-                        </button>
-                      </div>
-                    ))}
+                          <div className="flex items-center justify-between">
+                            <span className="px-2.5 py-1 rounded-lg text-xs font-black bg-indigo-50 text-indigo-800 border border-indigo-200 flex items-center gap-1.5">
+                              <Box size={13} className="text-indigo-600" />
+                              <span>{r.rackName}</span>
+                            </span>
+                            <div className="flex items-center gap-1">
+                              <span className="text-[10px] font-bold text-slate-400 uppercase bg-slate-200/80 px-2 py-0.5 rounded">{r.rackCode}</span>
+                              <span className="text-[9px] font-bold text-indigo-700 bg-indigo-100/70 px-1.5 py-0.5 rounded group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+                                History →
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="text-xs font-bold text-slate-800">{r.materialName}</div>
+
+                          {/* 3-Box Flow Mini */}
+                          <div className="grid grid-cols-3 gap-1.5 pt-1 text-[10px] border-t border-slate-100">
+                            <div className="bg-white p-1.5 rounded-lg border border-slate-200/80">
+                              <span className="text-slate-400 font-bold block">Came:</span>
+                              <span className="font-extrabold text-[#00705a]">+{rCame.toLocaleString()}</span>
+                            </div>
+                            <div className="bg-white p-1.5 rounded-lg border border-slate-200/80">
+                              <span className="text-slate-400 font-bold block">Left:</span>
+                              <span className="font-extrabold text-rose-600">-{rLeft.toLocaleString()}</span>
+                            </div>
+                            <div className="bg-emerald-50/80 p-1.5 rounded-lg border border-emerald-200">
+                              <span className="text-emerald-800 font-bold block">On Hand:</span>
+                              <span className="font-black text-[#00705a]">{r.currentAvailable.toLocaleString()}</span>
+                            </div>
+                          </div>
+
+                          <div className="pt-2 border-t border-slate-200 flex items-center justify-between">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase">Available in this Point</span>
+                            <span className="text-base font-black text-indigo-900">
+                              {r.currentAvailable.toLocaleString()} <span className="text-xs font-bold text-slate-500">{r.unit}</span>
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 pt-1">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (matchingRack) {
+                                  setSelectedPointId(matchingRack.id);
+                                  setViewMode('yard-detail');
+                                  setYardActiveTab('racks');
+                                }
+                              }}
+                              className="py-1.5 text-center text-[11px] font-bold text-indigo-700 bg-indigo-50/60 hover:bg-indigo-600 hover:text-white rounded-xl border border-indigo-200 transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                            >
+                              <History size={11} />
+                              <span>Point Ledger</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenShiftModal(selectedProjectId, r.materialName, r.rackName);
+                              }}
+                              className="py-1.5 text-center text-[11px] font-bold text-[#00705a] bg-emerald-50 hover:bg-[#00705a] hover:text-white rounded-xl border border-emerald-200 transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                            >
+                              <ArrowLeftRight size={11} />
+                              <span>Shift Out</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
                 </div>
               )}
             </section>
@@ -6148,8 +6819,8 @@ export default function StockyardPage() {
                     <ArrowLeftRight size={18} />
                   </div>
                   <div>
-                    <h3 className="text-base font-black text-slate-900 tracking-tight">Shift Stock Within Stockyard</h3>
-                    <p className="text-xs text-slate-500">Internal relocation between racks/stacks in {selectedYard.yardName}</p>
+                    <h3 className="text-base font-black text-slate-900 tracking-tight">Internal Stock Shift Between Points</h3>
+                    <p className="text-xs text-slate-500">Internal relocation between stock points / bays in {selectedYard.yardName}</p>
                   </div>
                 </div>
                 <button
@@ -6178,11 +6849,126 @@ export default function StockyardPage() {
                   </div>
                 </div>
 
-                {/* Project & Material */}
+                {/* Source & Destination Locations (1-Click Zero Typing) */}
+                <div className="p-4 bg-indigo-50/50 rounded-2xl border border-indigo-100 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-black uppercase tracking-wider text-indigo-900">
+                      1. Select Source & Destination Points (Click to Select)
+                    </span>
+                    <span className="text-[10px] font-bold text-indigo-600">No Typing Needed</span>
+                  </div>
+
+                  {/* Source Point Click Chips */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                      From: Source Stock Point / Bay <span className="text-rose-500">*</span>
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      {racks.map(r => {
+                        const isSelected = shiftForm.sourceRackName === r.rackName;
+                        const occ = parseFloat(String(r.currentOccupancyTons ?? r.currentAvailableStock ?? 0));
+                        return (
+                          <button
+                            key={r.id}
+                            type="button"
+                            onClick={() => {
+                              const stored = r.storedMaterials?.[0];
+                              const rInv = rackInventory.find(ri => ri.rackName === r.rackName);
+                              const pId = stored?.projectId || rInv?.projectId || shiftForm.projectId;
+                              const pName = stored?.projectName || rInv?.projectName || shiftForm.projectName;
+                              const mName = stored?.materialName || rInv?.materialName || shiftForm.materialName;
+                              const unit = stored?.unit || rInv?.unit || shiftForm.unit || 'MT';
+                              const defaultQty = occ > 0 ? (occ > 100 ? '100.00' : String(occ)) : '10.00';
+
+                              setShiftForm(prev => ({
+                                ...prev,
+                                sourceRackName: r.rackName,
+                                projectId: pId || prev.projectId,
+                                projectName: pName || prev.projectName,
+                                materialName: mName || prev.materialName,
+                                unit: unit,
+                                quantity: defaultQty
+                              }));
+                            }}
+                            className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                              isSelected
+                                ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm ring-2 ring-indigo-400/40'
+                                : 'bg-white border-slate-200 hover:border-indigo-300 text-slate-800'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className={`font-mono text-[10px] font-black px-1.5 py-0.5 rounded ${isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'}`}>
+                                {r.rackCode || r.stockPointCode}
+                              </span>
+                              <span className={`text-[10px] font-bold ${isSelected ? 'text-indigo-100' : 'text-slate-500'}`}>
+                                {occ.toLocaleString()} MT
+                              </span>
+                            </div>
+                            <div className="font-bold text-xs mt-1 truncate">{r.rackName}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {shiftForm.sourceRackName && (
+                      <div className="text-[11px] text-indigo-900 font-bold mt-1.5 flex items-center gap-1.5">
+                        <CheckCircle2 size={13} className="text-emerald-600" />
+                        <span>Source: <strong>{shiftForm.sourceRackName}</strong> (Available: {availableAtSourceRack.toFixed(2)} {shiftForm.unit})</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Destination Point Click Chips */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                      To: Destination Stock Point / Bay <span className="text-rose-500">*</span>
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      {racks
+                        .filter(r => r.rackName !== shiftForm.sourceRackName)
+                        .map(r => {
+                          const isSelected = shiftForm.destinationRackName === r.rackName;
+                          const occ = parseFloat(String(r.currentOccupancyTons ?? r.currentAvailableStock ?? 0));
+                          const free = Math.max(0, (r.capacityTons || 10000) - occ);
+                          return (
+                            <button
+                              key={r.id}
+                              type="button"
+                              onClick={() => {
+                                setShiftForm(prev => ({ ...prev, destinationRackName: r.rackName }));
+                              }}
+                              className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                                isSelected
+                                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm ring-2 ring-emerald-400/40'
+                                  : 'bg-white border-slate-200 hover:border-emerald-300 text-slate-800'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className={`font-mono text-[10px] font-black px-1.5 py-0.5 rounded ${isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'}`}>
+                                  {r.rackCode || r.stockPointCode}
+                                </span>
+                                <span className={`text-[10px] font-bold ${isSelected ? 'text-emerald-100' : 'text-emerald-700'}`}>
+                                  {free.toLocaleString()} MT free
+                                </span>
+                              </div>
+                              <div className="font-bold text-xs mt-1 truncate">{r.rackName}</div>
+                            </button>
+                          );
+                        })}
+                    </div>
+                    {shiftForm.destinationRackName && (
+                      <div className="text-[11px] text-emerald-900 font-bold mt-1.5 flex items-center gap-1.5">
+                        <CheckCircle2 size={13} className="text-emerald-600" />
+                        <span>Destination: <strong>{shiftForm.destinationRackName}</strong></span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Project & Material (Auto-populated with 1-click override) */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-                      Project <span className="text-rose-500">*</span>
+                      Project Allocation <span className="text-rose-500">*</span>
                     </label>
                     <select
                       required
@@ -6222,52 +7008,37 @@ export default function StockyardPage() {
                   </div>
                 </div>
 
-                {/* Source & Destination Locations */}
-                <div className="p-4 bg-indigo-50/50 rounded-2xl border border-indigo-100 space-y-3">
-                  <div className="text-[11px] font-black uppercase tracking-wider text-indigo-900">
-                    Internal Relocation Movement
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">
-                        Source Location / Rack <span className="text-rose-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="e.g. Rack A / Bay 1"
-                        value={shiftForm.sourceRackName}
-                        onChange={e => setShiftForm({ ...shiftForm, sourceRackName: e.target.value })}
-                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
-                      />
-                      <div className="text-[10px] text-slate-500 mt-1">
-                        Available at Source: <strong className="text-indigo-800">{availableAtSourceRack.toFixed(2)} {shiftForm.unit}</strong>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">
-                        Destination Location / Rack <span className="text-rose-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="e.g. Rack B / Stack 2"
-                        value={shiftForm.destinationRackName}
-                        onChange={e => setShiftForm({ ...shiftForm, destinationRackName: e.target.value })}
-                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Quantity to Shift */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-                      Quantity to Shift (MT) <span className="text-rose-500">*</span>
+                {/* Quantity to Shift with 1-Click Quick Percentage Chips */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-black uppercase tracking-wider text-slate-700">
+                      Quantity to Shift ({shiftForm.unit}) <span className="text-rose-500">*</span>
                     </label>
+                    {availableAtSourceRack > 0 && (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase">Quick Chips:</span>
+                        {[
+                          { label: '25%', factor: 0.25 },
+                          { label: '50%', factor: 0.50 },
+                          { label: '75%', factor: 0.75 },
+                          { label: '100% (All)', factor: 1.0 }
+                        ].map(p => (
+                          <button
+                            key={p.label}
+                            type="button"
+                            onClick={() => {
+                              const amt = (availableAtSourceRack * p.factor).toFixed(2);
+                              setShiftForm(prev => ({ ...prev, quantity: amt }));
+                            }}
+                            className="px-2 py-0.5 rounded-md text-[10px] font-black bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white border border-indigo-200 transition-colors cursor-pointer"
+                          >
+                            {p.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
                     <input
                       type="number"
                       step="0.01"
@@ -6277,12 +7048,6 @@ export default function StockyardPage() {
                       onChange={e => setShiftForm({ ...shiftForm, quantity: e.target.value })}
                       className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
                     />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-                      Shift Date & Time
-                    </label>
                     <input
                       type="datetime-local"
                       value={shiftForm.shiftDate}
@@ -6304,9 +7069,23 @@ export default function StockyardPage() {
 
                 {/* Remarks */}
                 <div>
-                  <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-                    Relocation Remarks / Reason
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-black uppercase tracking-wider text-slate-700">
+                      Relocation Remarks / Reason
+                    </label>
+                    <div className="flex items-center gap-1">
+                      {['Yard Clearing', 'Stock Rebalancing', 'Quality Segregation', 'Staging'].map(r => (
+                        <button
+                          key={r}
+                          type="button"
+                          onClick={() => setShiftForm(prev => ({ ...prev, remarks: r }))}
+                          className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors cursor-pointer"
+                        >
+                          {r}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <input
                     type="text"
                     placeholder="e.g. Cleared Siding Bay for upcoming incoming rake"
@@ -6355,9 +7134,14 @@ export default function StockyardPage() {
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
               <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-                <h3 className="text-base font-black text-slate-900 tracking-tight">
-                  {editingRack ? 'Edit Storage Location' : 'Add Storage Location / Rack'}
-                </h3>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 tracking-tight">
+                    {editingRack ? 'Edit Stock Point' : 'Create Stock Point / Storage Bay'}
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Stockyard Storage Asset • <strong className="text-slate-800">{selectedYard.yardName}</strong>
+                  </p>
+                </div>
                 <button
                   onClick={() => setIsAddRackModalOpen(false)}
                   className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100"
@@ -6376,12 +7160,12 @@ export default function StockyardPage() {
 
                 <div>
                   <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-                    Rack / Location Name <span className="text-rose-500">*</span>
+                    Stock Point / Bay Name <span className="text-rose-500">*</span>
                   </label>
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Rack A / North Stack 01"
+                    placeholder="e.g. Bay 1 / North Stack 01 / Silo B"
                     value={rackForm.rackName}
                     onChange={e => setRackForm({ ...rackForm, rackName: e.target.value })}
                     className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900"
@@ -6474,7 +7258,7 @@ export default function StockyardPage() {
                     disabled={isSubmitting}
                     className="px-5 py-2 text-xs font-black uppercase tracking-wider text-white bg-[#00705a] hover:bg-[#005a48] rounded-xl shadow-sm"
                   >
-                    {editingRack ? 'Update Location' : 'Save Location'}
+                    {editingRack ? 'Update Stock Point' : 'Save Stock Point'}
                   </button>
                 </div>
               </form>
@@ -7930,15 +8714,26 @@ export default function StockyardPage() {
                             const estTare = receiveVehicleForm.transportMode === 'RAIL_RAKE' ? 27.5 : 17.2;
                             const estNet = item.payloadCapacity || (receiveVehicleForm.transportMode === 'RAIL_RAKE' ? 61.0 : 35.2);
                             const estGross = parseFloat((estTare + estNet).toFixed(2));
+                            const autoRack = racks.find(r => (r.capacityTons || 10000) > (parseFloat(String(r.currentOccupancyTons || 0)) + estNet)) || racks[0];
+                            const autoProj = projects[0];
+
                             setReceiveVehicleForm(prev => ({
                               ...prev,
+                              transportMode: receiveVehicleForm.transportMode,
                               vehicleNumber: item.vehicleNumber,
                               vehicleType: item.vehicleType,
                               driverName: item.driverName || prev.driverName,
                               driverPhone: item.driverPhone || prev.driverPhone,
                               grossWeight: String(estGross),
                               tareWeight: String(estTare),
-                              netWeight: String(estNet)
+                              netWeight: String(estNet),
+                              rackName: prev.rackName || (autoRack ? (autoRack.rackName || autoRack.stockPointName) : ''),
+                              rackId: prev.rackId || (autoRack ? String(autoRack.id) : ''),
+                              projectId: prev.projectId || (autoProj ? (autoProj.projectId || autoProj.id) : ''),
+                              projectName: prev.projectName || (autoProj ? autoProj.name : ''),
+                              materialName: prev.materialName || autoProj?.commodity || 'Track Ballast 40mm (RDSO)',
+                              sourceLocation: prev.sourceLocation || 'Rewa Quarry Pit Face 04',
+                              supplierName: prev.supplierName || 'National Mineral Quarry Division'
                             }));
                           }}
                           className={`p-2.5 rounded-xl border text-xs cursor-pointer transition-all flex items-start justify-between gap-1.5 ${
@@ -7985,9 +8780,33 @@ export default function StockyardPage() {
 
                 {/* Storage Rack Bay */}
                 <div>
-                  <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-                    Designated Storage Rack / Stack <span className="text-rose-500">*</span>
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-black uppercase tracking-wider text-slate-700">
+                      Designated Stock Point / Bay <span className="text-rose-500">*</span>
+                    </label>
+                    <span className="text-[10px] text-slate-400 font-bold">1-Click Select</span>
+                  </div>
+                  {/* Quick Rack Chips */}
+                  <div className="flex flex-wrap gap-1 mb-1.5">
+                    {racks.map(r => (
+                      <button
+                        key={r.id}
+                        type="button"
+                        onClick={() => setReceiveVehicleForm(prev => ({
+                          ...prev,
+                          rackName: r.rackName || r.stockPointName || '',
+                          rackId: String(r.id)
+                        }))}
+                        className={`px-2 py-0.5 rounded-md text-[10px] font-bold border transition-colors cursor-pointer ${
+                          receiveVehicleForm.rackName === (r.rackName || r.stockPointName)
+                            ? 'bg-[#00705a] text-white border-[#00705a]'
+                            : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        {r.rackCode || r.stockPointCode}: {r.rackName || r.stockPointName}
+                      </button>
+                    ))}
+                  </div>
                   <select
                     value={receiveVehicleForm.rackName}
                     onChange={e => {
@@ -8080,9 +8899,23 @@ export default function StockyardPage() {
 
                 {/* Origin / Consignor */}
                 <div>
-                  <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-                    Origin Pit / Siding Location
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-black uppercase tracking-wider text-slate-700">
+                      Origin Pit / Siding Location
+                    </label>
+                    <div className="flex items-center gap-1">
+                      {['Rewa Pit 04', 'Barbil Siding', 'Chunar Quarry', 'Pakur Stone'].map(loc => (
+                        <button
+                          key={loc}
+                          type="button"
+                          onClick={() => setReceiveVehicleForm(prev => ({ ...prev, sourceLocation: loc }))}
+                          className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors cursor-pointer"
+                        >
+                          {loc}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <input
                     type="text"
                     placeholder="e.g. Rewa Quarry Pit Face 04"
@@ -8093,9 +8926,23 @@ export default function StockyardPage() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1">
-                    Consignor / Supplier Organization
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-black uppercase tracking-wider text-slate-700">
+                      Consignor / Supplier Organization
+                    </label>
+                    <div className="flex items-center gap-1">
+                      {['National Minerals', 'Odisha Stone Co', 'Singrauli Mining'].map(sup => (
+                        <button
+                          key={sup}
+                          type="button"
+                          onClick={() => setReceiveVehicleForm(prev => ({ ...prev, supplierName: sup }))}
+                          className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors cursor-pointer"
+                        >
+                          {sup}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <input
                     type="text"
                     placeholder="e.g. National Mineral Quarry Division"
@@ -8262,6 +9109,7 @@ export default function StockyardPage() {
           </div>
         </div>
       )}
+
     </div >
   );
 }

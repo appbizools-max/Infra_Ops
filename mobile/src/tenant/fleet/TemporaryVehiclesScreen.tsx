@@ -151,7 +151,7 @@ export default function TemporaryVehiclesScreen() {
       runningMinutes: runningM,
       runningHoursFormatted: `${Math.floor(runningM / 60)}h ${runningM % 60}m`,
       idleMinutes: idleM,
-      cost: Number(cost.toFixed(2))
+      cost: Number((isNaN(cost) ? 0 : cost).toFixed(2))
     };
   }, [selectedVehicle, logForm.startTime, logForm.endTime, logForm.idleBreakMinutes]);
 

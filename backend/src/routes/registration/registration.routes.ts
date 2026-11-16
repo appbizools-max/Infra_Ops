@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import bcrypt from 'bcrypt';
 import { pool } from '../../config/db';
+import { seedDefaultTenantRolesAndDepartments } from '../../utils/defaultTenantData';
 
 const router = Router();
 
@@ -278,7 +279,10 @@ router.post('/api/tenant/register', async (req, res) => {
       await client.query('DELETE FROM tenant_drafts WHERE firebase_uid = $1', [firebaseUid]);
     }
 
-    // 7. Commit transaction
+    // 7. Auto-seed standard enterprise roles & departments for this company
+    await seedDefaultTenantRolesAndDepartments(client, tenantId);
+
+    // 8. Commit transaction
     await client.query('COMMIT');
 
     res.status(201).json({ message: 'Tenant registered successfully', tenantId });

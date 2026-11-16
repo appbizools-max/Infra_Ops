@@ -30,7 +30,10 @@ router.get('/api/tenant/profile/:uid', async (req, res) => {
         t.msme_number as "msmeNumber",
         t.company_code as "companyCode",
         'admin' as "userType",
-        '#' || COALESCE(t.company_code, 'TNT') || '0001' as "memberId"
+        '#' || COALESCE(t.company_code, 'TNT') || '0001' as "memberId",
+        ARRAY['*'] as "allowedModules",
+        '{"*": {"*": true}}'::jsonb as "permissions",
+        'dashboard' as "landingModule"
       FROM tenant_admins a
       JOIN tenants t ON a.tenant_id = t.id
       WHERE a.firebase_uid = $1
@@ -58,9 +61,13 @@ router.get('/api/tenant/profile/:uid', async (req, res) => {
         u.department,
         'team_member' as "userType",
         u.member_id as "memberId",
-        u.status
+        u.status,
+        COALESCE(u.allowed_modules, r.allowed_modules, ARRAY['dashboard']::text[]) as "allowedModules",
+        COALESCE(u.permissions, r.permissions, '{}'::jsonb) as "permissions",
+        COALESCE(u.landing_module, r.landing_module, 'dashboard') as "landingModule"
       FROM tenant_users u
       JOIN tenants t ON u.tenant_id = t.id
+      LEFT JOIN tenant_roles r ON LOWER(TRIM(u.role)) = LOWER(TRIM(r.name)) AND u.tenant_id = r.tenant_id
       WHERE u.firebase_uid = $1
     `;
     const resultMember = await pool.query(queryMember, [uid]);

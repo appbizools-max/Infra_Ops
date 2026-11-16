@@ -3,6 +3,27 @@ import { pool } from '../../config/db';
 
 const router = Router();
 
+// Helper to prevent HR roles from performing stockyard mutations
+const verifyNonHR = async (uidOrEmail?: string): Promise<boolean> => {
+  if (!uidOrEmail) return true;
+  try {
+    const uRes = await pool.query(
+      'SELECT role, department FROM tenant_users WHERE firebase_uid = $1 OR LOWER(email) = LOWER($1)',
+      [uidOrEmail]
+    );
+    if (uRes.rows.length > 0) {
+      const role = (uRes.rows[0].role || '').toUpperCase();
+      const dept = (uRes.rows[0].department || '').toUpperCase();
+      if (role.includes('HR') || dept.includes('HR') || dept.includes('HUMAN RES')) {
+        return false;
+      }
+    }
+    return true;
+  } catch {
+    return true;
+  }
+};
+
 // ====================================================================
 // 🏗️ STOCKYARDS & MATERIAL INVENTORY ENDPOINTS
 // ====================================================================
@@ -351,7 +372,19 @@ router.post('/api/tenant/stockyards', async (req, res) => {
     let tenantId = 1;
     if (firebaseUid) {
       const aRes = await pool.query('SELECT tenant_id FROM tenant_admins WHERE firebase_uid = $1', [firebaseUid]);
-      if (aRes.rows.length > 0) tenantId = aRes.rows[0].tenant_id;
+      if (aRes.rows.length > 0) {
+        tenantId = aRes.rows[0].tenant_id;
+      } else {
+        const uRes = await pool.query('SELECT tenant_id, role, department FROM tenant_users WHERE firebase_uid = $1', [firebaseUid]);
+        if (uRes.rows.length > 0) {
+          tenantId = uRes.rows[0].tenant_id;
+          const role = (uRes.rows[0].role || '').toUpperCase();
+          const dept = (uRes.rows[0].department || '').toUpperCase();
+          if (role.includes('HR') || dept.includes('HR') || dept.includes('HUMAN RES')) {
+            return res.status(403).json({ error: 'Access denied: HR role is not authorized to create or modify stockyards.' });
+          }
+        }
+      }
     }
 
     // 2. Generate or sanitize stockyard code
@@ -526,6 +559,10 @@ router.post('/api/tenant/stockyards/:id/receipt', async (req, res) => {
       rackId, rackName
     } = req.body;
 
+    if (!(await verifyNonHR(recordedBy || req.body.firebaseUid))) {
+      return res.status(403).json({ error: 'Access denied: HR role is not authorized to record material receipts.' });
+    }
+
     if (!projectId) return res.status(400).json({ error: 'Project is required for receiving material.' });
     if (!materialName || !materialName.trim()) return res.status(400).json({ error: 'Material name is required.' });
     if (!vehicleNumber || !vehicleNumber.trim()) return res.status(400).json({ error: 'Vehicle / Rake number is required.' });
@@ -652,61 +689,169 @@ router.post('/api/tenant/stockyards/:id/receipt', async (req, res) => {
   }
 });
 
-// GET Racks / Internal Storage Locations for a Stockyard (Optional Rack Management)
-router.get('/api/tenant/stockyards/:id/racks', async (req, res) => {
+// GET Stock Points / Storage Bays / Racks for a Stockyard
+router.get(['/api/tenant/stockyards/:id/racks', '/api/tenant/stockyards/:id/stock-points'], async (req, res) => {
   try {
     const { id } = req.params;
+
+    // Check if any stock points exist, if not, auto-seed standard stock points
+    const countCheck = await pool.query('SELECT COUNT(*) FROM tenant_stockyard_racks WHERE stockyard_id = $1', [id]);
+    if (parseInt(countCheck.rows[0].count, 10) === 0) {
+      const yRes = await pool.query('SELECT tenant_id FROM tenant_stockyards WHERE id = $1', [id]);
+      const tenantId = yRes.rows[0]?.tenant_id || 1;
+
+      await pool.query(`
+        INSERT INTO tenant_stockyard_racks (tenant_id, stockyard_id, rack_code, rack_name, location_type, capacity_tons, description, status)
+        VALUES 
+          ($1, $2, 'SP-01', 'Bay 1 - Inward Siding Point', 'Bay', 25000, 'Primary discharge bay near Railway Siding 1', 'Active'),
+          ($1, $2, 'SP-02', 'Bay 2 - Main Stock Pile Area', 'Stack', 20000, 'Graded aggregate & ballast open stock stack', 'Active'),
+          ($1, $2, 'SP-03', 'Bay 3 - Outward Dispatch Siding', 'Bay', 15000, 'Staging bay for tipper loading and outbound freight', 'Active')
+        ON CONFLICT DO NOTHING
+      `, [tenantId, id]);
+
+      const firstSp = await pool.query('SELECT id, rack_name FROM tenant_stockyard_racks WHERE stockyard_id = $1 ORDER BY id ASC LIMIT 1', [id]);
+      if (firstSp.rows.length > 0) {
+        await pool.query(`
+          UPDATE tenant_stockyard_transactions
+          SET rack_id = $1, rack_name = $2
+          WHERE stockyard_id = $3 AND rack_id IS NULL
+        `, [firstSp.rows[0].id, firstSp.rows[0].rack_name, id]);
+      }
+    }
+
     const racksRes = await pool.query(`
       SELECT 
         r.id,
         r.stockyard_id as "stockyardId",
         r.rack_code as "rackCode",
+        r.rack_code as "stockPointCode",
         r.rack_name as "rackName",
+        r.rack_name as "stockPointName",
         r.location_type as "locationType",
-        r.capacity_tons as "capacityTons",
+        COALESCE(r.capacity_tons, 10000)::NUMERIC as "capacityTons",
         r.description,
-        r.status,
+        COALESCE(r.status, 'Active') as "status",
         r.created_at as "createdAt",
-        COALESCE(inv.current_available, 0)::NUMERIC as "currentOccupancyTons"
+        COALESCE(stats.total_received, 0)::NUMERIC as "totalReceived",
+        COALESCE(stats.total_issued, 0)::NUMERIC as "totalIssued",
+        COALESCE(stats.total_shifted_in, 0)::NUMERIC as "totalShiftedIn",
+        COALESCE(stats.total_shifted_out, 0)::NUMERIC as "totalShiftedOut",
+        COALESCE(stats.total_came, 0)::NUMERIC as "totalCame",
+        COALESCE(stats.total_left, 0)::NUMERIC as "totalLeft",
+        GREATEST(0, COALESCE(stats.current_available, 0))::NUMERIC as "currentOccupancyTons",
+        GREATEST(0, COALESCE(stats.current_available, 0))::NUMERIC as "currentAvailableStock",
+        COALESCE(mat_agg.stored_materials, '[]'::jsonb) as "storedMaterials"
       FROM tenant_stockyard_racks r
       LEFT JOIN (
-        SELECT 
-          stockyard_id,
-          COALESCE(rack_id, 0) as r_id,
+        SELECT
+          point_id,
+          SUM(CASE WHEN t_type = 'INWARD' THEN qty ELSE 0 END) as total_received,
+          SUM(CASE WHEN t_type = 'OUTWARD' THEN qty ELSE 0 END) as total_issued,
+          SUM(CASE WHEN t_type = 'SHIFT_IN' THEN qty ELSE 0 END) as total_shifted_in,
+          SUM(CASE WHEN t_type = 'SHIFT_OUT' THEN qty ELSE 0 END) as total_shifted_out,
+          SUM(CASE WHEN t_type IN ('INWARD', 'SHIFT_IN') THEN qty ELSE 0 END) as total_came,
+          SUM(CASE WHEN t_type IN ('OUTWARD', 'SHIFT_OUT', 'LOSS') THEN qty ELSE 0 END) as total_left,
           SUM(CASE 
-            WHEN transaction_type = 'INWARD' THEN quantity 
-            WHEN transaction_type = 'OUTWARD' THEN -quantity 
-            WHEN transaction_type = 'LOSS' THEN -quantity 
-            WHEN transaction_type = 'ADJUSTMENT' THEN quantity 
+            WHEN t_type IN ('INWARD', 'SHIFT_IN', 'ADJUSTMENT_POS') THEN qty 
+            WHEN t_type IN ('OUTWARD', 'SHIFT_OUT', 'LOSS', 'ADJUSTMENT_NEG') THEN -qty 
             ELSE 0 
           END) as current_available
-        FROM tenant_stockyard_transactions
-        GROUP BY stockyard_id, rack_id
-      ) inv ON r.id = inv.r_id AND r.stockyard_id = inv.stockyard_id
+        FROM (
+          SELECT rack_id as point_id, transaction_type as t_type, quantity as qty
+          FROM tenant_stockyard_transactions
+          WHERE stockyard_id = $1 AND rack_id IS NOT NULL AND transaction_type <> 'INTERNAL_SHIFT'
+          UNION ALL
+          SELECT destination_rack_id as point_id, 'SHIFT_IN' as t_type, quantity as qty
+          FROM tenant_stockyard_transactions
+          WHERE stockyard_id = $1 AND destination_rack_id IS NOT NULL AND transaction_type = 'INTERNAL_SHIFT'
+          UNION ALL
+          SELECT rack_id as point_id, 'SHIFT_OUT' as t_type, quantity as qty
+          FROM tenant_stockyard_transactions
+          WHERE stockyard_id = $1 AND rack_id IS NOT NULL AND transaction_type = 'INTERNAL_SHIFT'
+        ) movements
+        GROUP BY point_id
+      ) stats ON r.id = stats.point_id
+      LEFT JOIN (
+        SELECT 
+          point_id,
+          jsonb_agg(jsonb_build_object(
+            'materialName', material_name,
+            'projectId', project_id,
+            'projectName', project_name,
+            'unit', unit,
+            'totalReceived', total_received,
+            'totalIssued', total_issued,
+            'totalCame', total_came,
+            'totalLeft', total_left,
+            'currentAvailable', current_available
+          )) as stored_materials
+        FROM (
+          SELECT 
+            point_id,
+            material_name,
+            project_id,
+            project_name,
+            unit,
+            SUM(CASE WHEN t_type = 'INWARD' THEN qty ELSE 0 END) as total_received,
+            SUM(CASE WHEN t_type = 'OUTWARD' THEN qty ELSE 0 END) as total_issued,
+            SUM(CASE WHEN t_type IN ('INWARD', 'SHIFT_IN') THEN qty ELSE 0 END) as total_came,
+            SUM(CASE WHEN t_type IN ('OUTWARD', 'SHIFT_OUT', 'LOSS') THEN qty ELSE 0 END) as total_left,
+            GREATEST(0, SUM(CASE 
+              WHEN t_type IN ('INWARD', 'SHIFT_IN') THEN qty 
+              WHEN t_type IN ('OUTWARD', 'SHIFT_OUT', 'LOSS') THEN -qty 
+              ELSE 0 
+            END)) as current_available
+          FROM (
+            SELECT rack_id as point_id, material_name, project_id, project_name, unit, transaction_type as t_type, quantity as qty
+            FROM tenant_stockyard_transactions
+            WHERE stockyard_id = $1 AND rack_id IS NOT NULL AND transaction_type <> 'INTERNAL_SHIFT'
+            UNION ALL
+            SELECT destination_rack_id as point_id, material_name, project_id, project_name, unit, 'SHIFT_IN' as t_type, quantity as qty
+            FROM tenant_stockyard_transactions
+            WHERE stockyard_id = $1 AND destination_rack_id IS NOT NULL AND transaction_type = 'INTERNAL_SHIFT'
+            UNION ALL
+            SELECT rack_id as point_id, material_name, project_id, project_name, unit, 'SHIFT_OUT' as t_type, quantity as qty
+            FROM tenant_stockyard_transactions
+            WHERE stockyard_id = $1 AND rack_id IS NOT NULL AND transaction_type = 'INTERNAL_SHIFT'
+          ) m_movements
+          WHERE material_name IS NOT NULL
+          GROUP BY point_id, material_name, project_id, project_name, unit
+        ) grouped_m
+        GROUP BY point_id
+      ) mat_agg ON r.id = mat_agg.point_id
       WHERE r.stockyard_id = $1
       ORDER BY r.rack_code ASC, r.id ASC
     `, [id]);
     res.json(racksRes.rows);
   } catch (err: any) {
-    console.error('[GET /api/tenant/stockyards/:id/racks] Error:', err);
+    console.error('[GET /api/tenant/stockyards/:id/stock-points] Error:', err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// POST Add Internal Storage Rack / Stack / Bay (Optional)
-router.post('/api/tenant/stockyards/:id/racks', async (req, res) => {
+// POST Add Stock Point / Storage Bay / Rack
+router.post(['/api/tenant/stockyards/:id/racks', '/api/tenant/stockyards/:id/stock-points'], async (req, res) => {
   try {
     const { id } = req.params;
-    const { rackName, rackCode, locationType = 'Rack', capacityTons = 10000, description, status = 'Active' } = req.body;
-    if (!rackName || !rackName.trim()) return res.status(400).json({ error: 'Rack / Location Name is required.' });
+    const {
+      rackName, stockPointName,
+      rackCode, stockPointCode,
+      locationType = 'Bay',
+      capacityTons = 10000,
+      description,
+      status = 'Active'
+    } = req.body;
+
+    const finalName = (stockPointName || rackName || '').trim();
+    if (!finalName) return res.status(400).json({ error: 'Stock Point name is required.' });
 
     const yardRes = await pool.query('SELECT tenant_id FROM tenant_stockyards WHERE id = $1', [id]);
     if (yardRes.rows.length === 0) return res.status(404).json({ error: 'Stockyard not found' });
     const tenantId = yardRes.rows[0].tenant_id;
 
-    let finalCode = (rackCode || '').trim().toUpperCase();
+    let finalCode = (stockPointCode || rackCode || '').trim().toUpperCase();
     if (!finalCode) {
-      finalCode = `RCK-${Math.floor(100 + Math.random() * 900)}`;
+      finalCode = `SP-${Math.floor(100 + Math.random() * 900)}`;
     }
 
     const dupCheck = await pool.query(
@@ -714,25 +859,38 @@ router.post('/api/tenant/stockyards/:id/racks', async (req, res) => {
       [id, finalCode]
     );
     if (dupCheck.rows.length > 0) {
-      return res.status(400).json({ error: `Rack code "${finalCode}" already exists in this stockyard. Please use a unique code.` });
+      return res.status(400).json({ error: `Stock Point code "${finalCode}" already exists in this stockyard. Please use a unique code.` });
     }
 
     const insertRes = await pool.query(`
       INSERT INTO tenant_stockyard_racks (
         tenant_id, stockyard_id, rack_code, rack_name, location_type, capacity_tons, description, status
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      RETURNING id, stockyard_id as "stockyardId", rack_code as "rackCode", rack_name as "rackName", location_type as "locationType", capacity_tons as "capacityTons", description, status, created_at as "createdAt"
-    `, [tenantId, id, finalCode, rackName.trim(), locationType || 'Rack', parseFloat(capacityTons) || 10000, description || '', status || 'Active']);
+      RETURNING 
+        id, 
+        stockyard_id as "stockyardId", 
+        rack_code as "rackCode", 
+        rack_code as "stockPointCode", 
+        rack_name as "rackName", 
+        rack_name as "stockPointName", 
+        location_type as "locationType", 
+        capacity_tons as "capacityTons", 
+        description, 
+        status, 
+        created_at as "createdAt",
+        0 as "currentOccupancyTons",
+        '[]'::jsonb as "storedMaterials"
+    `, [tenantId, id, finalCode, finalName, locationType || 'Bay', parseFloat(capacityTons) || 10000, description || '', status || 'Active']);
 
     res.status(201).json(insertRes.rows[0]);
   } catch (err: any) {
-    console.error('[POST /api/tenant/stockyards/:id/racks] Error:', err);
+    console.error('[POST /api/tenant/stockyards/:id/stock-points] Error:', err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// PUT Edit Rack / Storage Location
-router.put('/api/tenant/stockyards/:id/racks/:rackId', async (req, res) => {
+// PUT Edit Stock Point / Storage Location
+router.put(['/api/tenant/stockyards/:id/racks/:rackId', '/api/tenant/stockyards/:id/stock-points/:rackId'], async (req, res) => {
   try {
     const { id, rackId } = req.params;
     const { rackName, rackCode, locationType, capacityTons, description, status } = req.body;
@@ -759,32 +917,49 @@ router.put('/api/tenant/stockyards/:id/racks/:rackId', async (req, res) => {
 });
 
 // DELETE Rack / Storage Location
-router.delete('/api/tenant/stockyards/:id/racks/:rackId', async (req, res) => {
+// DELETE Stock Point / Storage Location
+router.delete(['/api/tenant/stockyards/:id/racks/:rackId', '/api/tenant/stockyards/:id/stock-points/:rackId'], async (req, res) => {
   try {
     const { id, rackId } = req.params;
     const delRes = await pool.query('DELETE FROM tenant_stockyard_racks WHERE id = $1 AND stockyard_id = $2 RETURNING *', [rackId, id]);
-    if (delRes.rows.length === 0) return res.status(404).json({ error: 'Rack not found' });
-    res.json({ message: 'Storage location deleted successfully' });
+    if (delRes.rows.length === 0) return res.status(404).json({ error: 'Stock point not found' });
+    res.json({ message: 'Stock point deleted successfully' });
   } catch (err: any) {
-    console.error('[DELETE /api/tenant/stockyards/:id/racks/:rackId] Error:', err);
+    console.error('[DELETE /api/tenant/stockyards/:id/stock-points/:rackId] Error:', err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// GET Rack-Wise Material Inventory Breakdown
-router.get('/api/tenant/stockyards/:id/rack-inventory', async (req, res) => {
+// GET Stock-Point-Wise Material Inventory Breakdown
+router.get(['/api/tenant/stockyards/:id/rack-inventory', '/api/tenant/stockyards/:id/stock-point-inventory'], async (req, res) => {
   try {
     const { id } = req.params;
     const rackInv = await pool.query(`
       SELECT 
+        r.id as "stockPointId",
         COALESCE(r.rack_name, t.rack_name, 'Open Storage Area') as "rackName",
-        COALESCE(r.rack_code, 'GENERAL') as "rackCode",
-        COALESCE(r.location_type, 'General') as "locationType",
+        COALESCE(r.rack_name, t.rack_name, 'Open Storage Area') as "stockPointName",
+        COALESCE(r.rack_code, 'SP-GEN') as "rackCode",
+        COALESCE(r.rack_code, 'SP-GEN') as "stockPointCode",
+        COALESCE(r.location_type, 'Bay') as "locationType",
+        COALESCE(r.capacity_tons, 10000)::NUMERIC as "capacityTons",
         t.project_id as "projectId",
-        t.project_name as "projectName",
+        COALESCE(t.project_name, t.project_id, 'Assigned Project') as "projectName",
         COALESCE(t.material_name, 'General Material') as "materialName",
         COALESCE(t.unit, 'MT') as "unit",
+        SUM(CASE WHEN t.transaction_type = 'INWARD' THEN t.quantity ELSE 0 END)::NUMERIC as "totalReceived",
+        SUM(CASE WHEN t.transaction_type = 'OUTWARD' THEN t.quantity ELSE 0 END)::NUMERIC as "totalIssued",
         SUM(CASE 
+          WHEN t.transaction_type = 'INWARD' THEN t.quantity 
+          WHEN t.transaction_type = 'INTERNAL_SHIFT' AND t.destination_rack_id = r.id THEN t.quantity 
+          ELSE 0 
+        END)::NUMERIC as "totalCame",
+        SUM(CASE 
+          WHEN t.transaction_type IN ('OUTWARD', 'LOSS') THEN t.quantity 
+          WHEN t.transaction_type = 'INTERNAL_SHIFT' AND t.rack_id = r.id THEN t.quantity 
+          ELSE 0 
+        END)::NUMERIC as "totalLeft",
+        GREATEST(0, SUM(CASE 
           WHEN t.transaction_type = 'INWARD' AND (t.rack_id = r.id OR (t.rack_id IS NULL AND r.id IS NULL)) THEN t.quantity
           WHEN t.transaction_type = 'OUTWARD' AND (t.rack_id = r.id OR (t.rack_id IS NULL AND r.id IS NULL)) THEN -t.quantity
           WHEN t.transaction_type = 'LOSS' AND (t.rack_id = r.id OR (t.rack_id IS NULL AND r.id IS NULL)) THEN -t.quantity
@@ -792,26 +967,17 @@ router.get('/api/tenant/stockyards/:id/rack-inventory', async (req, res) => {
           WHEN t.transaction_type = 'INTERNAL_SHIFT' AND t.destination_rack_id = r.id THEN t.quantity
           WHEN t.transaction_type = 'INTERNAL_SHIFT' AND t.rack_id = r.id THEN -t.quantity
           ELSE 0
-        END)::NUMERIC as "currentAvailable",
+        END))::NUMERIC as "currentAvailable",
         MAX(t.created_at) as "lastUpdated"
       FROM tenant_stockyard_transactions t
-      FULL OUTER JOIN tenant_stockyard_racks r ON (t.rack_id = r.id OR t.destination_rack_id = r.id) AND r.stockyard_id = $1
+      LEFT JOIN tenant_stockyard_racks r ON (t.rack_id = r.id OR t.destination_rack_id = r.id) AND r.stockyard_id = $1
       WHERE t.stockyard_id = $1 AND t.project_id IS NOT NULL
-      GROUP BY COALESCE(r.rack_name, t.rack_name, 'Open Storage Area'), COALESCE(r.rack_code, 'GENERAL'), COALESCE(r.location_type, 'General'), t.project_id, t.project_name, COALESCE(t.material_name, 'General Material'), COALESCE(t.unit, 'MT')
-      HAVING SUM(CASE 
-          WHEN t.transaction_type = 'INWARD' AND (t.rack_id = r.id OR (t.rack_id IS NULL AND r.id IS NULL)) THEN t.quantity
-          WHEN t.transaction_type = 'OUTWARD' AND (t.rack_id = r.id OR (t.rack_id IS NULL AND r.id IS NULL)) THEN -t.quantity
-          WHEN t.transaction_type = 'LOSS' AND (t.rack_id = r.id OR (t.rack_id IS NULL AND r.id IS NULL)) THEN -t.quantity
-          WHEN t.transaction_type = 'ADJUSTMENT' AND (t.rack_id = r.id OR (t.rack_id IS NULL AND r.id IS NULL)) THEN t.quantity
-          WHEN t.transaction_type = 'INTERNAL_SHIFT' AND t.destination_rack_id = r.id THEN t.quantity
-          WHEN t.transaction_type = 'INTERNAL_SHIFT' AND t.rack_id = r.id THEN -t.quantity
-          ELSE 0
-        END) > 0
-      ORDER BY "rackName" ASC, "projectName" ASC
+      GROUP BY r.id, COALESCE(r.rack_name, t.rack_name, 'Open Storage Area'), COALESCE(r.rack_code, 'SP-GEN'), COALESCE(r.location_type, 'Bay'), COALESCE(r.capacity_tons, 10000), t.project_id, t.project_name, COALESCE(t.material_name, 'General Material'), COALESCE(t.unit, 'MT')
+      ORDER BY "stockPointName" ASC, "projectName" ASC
     `, [id]);
     res.json(rackInv.rows);
   } catch (err: any) {
-    console.error('[GET /api/tenant/stockyards/:id/rack-inventory] Error:', err);
+    console.error('[GET /api/tenant/stockyards/:id/stock-point-inventory] Error:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -822,25 +988,34 @@ router.post('/api/tenant/stockyards/:id/shift', async (req, res) => {
     const { id } = req.params;
     const {
       projectId, projectName, materialName, unit = 'MT',
-      sourceRackId, sourceRackName,
-      destinationRackId, destinationRackName,
+      sourceRackId, sourceRackName, sourceStockPointId, sourceStockPointName,
+      destinationRackId, destinationRackName, destinationStockPointId, destinationStockPointName,
       quantity, shiftDate, remarks, recordedBy
     } = req.body;
+
+    if (!(await verifyNonHR(recordedBy || req.body.firebaseUid))) {
+      return res.status(403).json({ error: 'Access denied: HR role is not authorized to execute stock shifts.' });
+    }
+
+    const finalSourceId = sourceStockPointId || sourceRackId;
+    const finalSourceName = sourceStockPointName || sourceRackName;
+    const finalDestId = destinationStockPointId || destinationRackId;
+    const finalDestName = destinationStockPointName || destinationRackName;
 
     if (!projectId) return res.status(400).json({ error: 'Project is required for internal stock shifting.' });
     if (!materialName || !materialName.trim()) return res.status(400).json({ error: 'Material type is required.' });
     const shiftQty = parseFloat(quantity);
     if (!shiftQty || shiftQty <= 0) return res.status(400).json({ error: 'Shift quantity must be greater than zero.' });
 
-    if (!sourceRackName && !sourceRackId) return res.status(400).json({ error: 'Source rack or location is required.' });
-    if (!destinationRackName && !destinationRackId) return res.status(400).json({ error: 'Destination rack or location is required.' });
+    if (!finalSourceName && !finalSourceId) return res.status(400).json({ error: 'Source stock point is required.' });
+    if (!finalDestName && !finalDestId) return res.status(400).json({ error: 'Destination stock point is required.' });
 
     // Validate Source != Destination
     if (
-      (sourceRackId && destinationRackId && String(sourceRackId) === String(destinationRackId)) ||
-      (sourceRackName && destinationRackName && sourceRackName.trim().toLowerCase() === destinationRackName.trim().toLowerCase())
+      (finalSourceId && finalDestId && String(finalSourceId) === String(finalDestId)) ||
+      (finalSourceName && finalDestName && finalSourceName.trim().toLowerCase() === finalDestName.trim().toLowerCase())
     ) {
-      return res.status(400).json({ error: 'Source and Destination must be different storage locations within this stockyard.' });
+      return res.status(400).json({ error: 'Source and Destination must be different stock points within this stockyard.' });
     }
 
     // Verify stockyard exists
@@ -883,10 +1058,10 @@ router.post('/api/tenant/stockyards/:id/shift', async (req, res) => {
     `, [
       tenantId, id, shiftQty, unit,
       materialName.trim(), projectId, projectName || projectId,
-      sourceRackName || 'Rack A', destinationRackName || 'Rack B',
-      sourceRackId ? parseInt(sourceRackId, 10) : null, sourceRackName || '',
-      destinationRackId ? parseInt(destinationRackId, 10) : null, destinationRackName || '',
-      shiftId, remarks ? `[INTERNAL SHIFT] ${remarks.trim()}` : `Internal relocation from ${sourceRackName} to ${destinationRackName}`,
+      finalSourceName || 'Stock Point A', finalDestName || 'Stock Point B',
+      finalSourceId ? parseInt(finalSourceId, 10) : null, finalSourceName || '',
+      finalDestId ? parseInt(finalDestId, 10) : null, finalDestName || '',
+      shiftId, remarks ? `[INTERNAL SHIFT] ${remarks.trim()}` : `Internal relocation from ${finalSourceName} to ${finalDestName}`,
       recordedBy || 'Yard Operations Supervisor'
     ]);
 
@@ -1531,6 +1706,10 @@ router.post('/api/tenant/stockyards/:id/issue', async (req, res) => {
       rackId, rackName
     } = req.body;
 
+    if (!(await verifyNonHR(recordedBy || req.body.firebaseUid))) {
+      return res.status(403).json({ error: 'Access denied: HR role is not authorized to issue materials.' });
+    }
+
     if (!projectId) return res.status(400).json({ error: 'Project is required for issuing material.' });
     if (!materialName || !materialName.trim()) return res.status(400).json({ error: 'Material name is required.' });
     const issueQty = parseFloat(quantity);
@@ -1647,7 +1826,6 @@ router.post('/api/tenant/stockyards/:id/issue', async (req, res) => {
         `, [durationHours, eq.equipmentId || eq.equipmentNumber, String(tenantId)]);
       }
     }
-
     res.status(201).json({
       message: 'Material issued and dispatched successfully',
       transaction: txInsert.rows[0],
@@ -1715,7 +1893,11 @@ router.post('/api/tenant/stockyards/:id/adjust', async (req, res) => {
 // GET Stockyard Transactions (Inward / Outward ledger with complete filters)
 router.get('/api/tenant/stockyard-transactions', async (req, res) => {
   try {
-    const { projectId, stockyardId, transactionType, type, search, q } = req.query as any;
+    const {
+      projectId, stockyardId, transactionType, type, search, q,
+      rackId, stockPointId, rackName, stockPointName
+    } = req.query as any;
+
     let query = `
       SELECT 
         t.id,
@@ -1750,6 +1932,7 @@ router.get('/api/tenant/stockyard-transactions', async (req, res) => {
         t.grn_number as "grnNumber",
         t.rack_id as "rackId",
         t.rack_name as "rackName",
+        t.destination_rack_id as "destinationRackId",
         t.destination_rack_name as "destinationRackName",
         t.shift_id as "shiftId",
         t.gate_in_time as "gateInTime",
@@ -1772,6 +1955,16 @@ router.get('/api/tenant/stockyard-transactions', async (req, res) => {
       params.push(stockyardId);
       query += ` AND t.stockyard_id = $${params.length}`;
     }
+    const pointId = stockPointId || rackId;
+    if (pointId && pointId !== 'ALL') {
+      params.push(pointId);
+      query += ` AND (t.rack_id = $${params.length} OR t.destination_rack_id = $${params.length})`;
+    }
+    const pointName = stockPointName || rackName;
+    if (pointName && pointName !== 'ALL') {
+      params.push(`%${pointName.trim()}%`);
+      query += ` AND (t.rack_name ILIKE $${params.length} OR t.destination_rack_name ILIKE $${params.length})`;
+    }
     const targetType = transactionType || type;
     if (targetType && targetType !== 'ALL') {
       params.push(targetType.toUpperCase());
@@ -1790,7 +1983,7 @@ router.get('/api/tenant/stockyard-transactions', async (req, res) => {
         y.yard_name ILIKE $${params.length}
       )`;
     }
-    query += ' ORDER BY t.created_at DESC LIMIT 200';
+    query += ' ORDER BY t.created_at DESC, t.id DESC LIMIT 200';
 
     const txRes = await pool.query(query, params);
     res.json(txRes.rows);
@@ -1844,6 +2037,4 @@ router.post('/api/tenant/stockyards/:id/checkout-truck/:txId', async (req, res) 
     res.status(500).json({ error: err.message });
   }
 });
-
-
 export default router;

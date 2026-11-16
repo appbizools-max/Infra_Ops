@@ -48,10 +48,21 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
       String(profileData?.department).toUpperCase().includes('HR') || 
       String(profileData?.department).toUpperCase().includes('HUMAN RES') || 
       String(profileData?.designation).toUpperCase().includes('HR') || 
-      String(profileData?.designation).toUpperCase().includes('HUMAN RES')
+      String(profileData?.designation).toUpperCase().includes('HUMAN RES') ||
+      (Array.isArray(profileData?.allowedModules) && profileData.allowedModules.includes('workforce'))
+    );
+  const isProjectManager =
+    profileData?.userType === 'team_member' && !isHR && (
+      String(profileData?.department).toUpperCase().includes('PROJECT') || 
+      String(profileData?.designation).toUpperCase().includes('PROJECT') || 
+      String(profileData?.designation).toUpperCase().includes('PM') ||
+      (Array.isArray(profileData?.allowedModules) && profileData.allowedModules.includes('projects') && profileData.allowedModules.includes('stockyard'))
     );
   const isAdmin = profileData?.userType !== 'team_member';
-  const canAccessDivisions = profileData && (isAdmin || isHR);
+  const canAccessHR = isAdmin || isHR;
+  const canAccessDivisions = profileData && canAccessHR;
+  const canAccessOperations = !isHR && (isAdmin || isProjectManager || (Array.isArray(profileData?.allowedModules) && profileData.allowedModules.includes('stockyard')));
+  const canAccessFleet = !isHR && (isAdmin || isProjectManager || (Array.isArray(profileData?.allowedModules) && profileData.allowedModules.includes('fleet')));
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -169,8 +180,9 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
           </View>
         )}
 
-        <DrawerItem label="Access & Controls" iconName="shield" routeName="Access Controls" />
-        <DrawerItem label="HR" iconName="users" routeName="HR" />
+        {isAdmin && (
+          <DrawerItem label="Access & Controls" iconName="shield" routeName="Access Controls" />
+        )}
         {(isAdmin || isHR) && (
           <DrawerItem label="Attendance Tracker" iconName="clock" routeName="Attendance Tracker" />
         )}
@@ -188,118 +200,126 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
         {/* WORK ORDERS */}
         <DrawerItem label="Work Orders" iconName="clipboard" routeName="Work Orders" />
 
-        {/* OPERATIONS & STOCKYARD */}
-        <TouchableOpacity 
-          style={[styles.drawerItem, (currentRoute === 'Stockyard Management' || currentRoute === 'Operations Corridors' || currentRoute === 'Dispatch Waybills') && styles.activeDrawerItem]}
-          onPress={() => setIsOperationsOpen(!isOperationsOpen)}
-        >
-          <Feather 
-            name="layers" 
-            size={20} 
-            color={(currentRoute === 'Stockyard Management' || currentRoute === 'Operations Corridors' || currentRoute === 'Dispatch Waybills') ? '#10B981' : '#64748B'} 
-            style={styles.drawerIcon} 
-          />
-          <Text style={[styles.drawerLabel, (currentRoute === 'Stockyard Management' || currentRoute === 'Operations Corridors' || currentRoute === 'Dispatch Waybills') && styles.activeDrawerLabel, { flex: 1 }]}>
-            Operations & Stockyard
-          </Text>
-          <Feather 
-            name={isOperationsOpen ? 'chevron-down' : 'chevron-right'} 
-            size={16} 
-            color="#64748B" 
-          />
-        </TouchableOpacity>
-
-        {isOperationsOpen && (
-          <View style={{ paddingLeft: 32, backgroundColor: '#F8FAFC', borderBottomWidth: 1, borderBottomColor: '#E2E8F0', paddingVertical: 4 }}>
+        {/* OPERATIONS & STOCKYARD (Restricted: Not visible to HR) */}
+        {canAccessOperations && (
+          <>
             <TouchableOpacity 
-              style={styles.subDrawerItem} 
-              onPress={() => props.navigation.navigate('Stockyard Management')}
+              style={[styles.drawerItem, (currentRoute === 'Stockyard Management' || currentRoute === 'Operations Corridors' || currentRoute === 'Dispatch Waybills') && styles.activeDrawerItem]}
+              onPress={() => setIsOperationsOpen(!isOperationsOpen)}
             >
-              <Feather name="layers" size={16} color={currentRoute === 'Stockyard Management' ? '#10B981' : '#64748B'} style={{ marginRight: 12 }} />
-              <Text style={[styles.subDrawerLabel, currentRoute === 'Stockyard Management' && styles.activeDrawerLabel]}>Stockyard Hubs</Text>
+              <Feather 
+                name="layers" 
+                size={20} 
+                color={(currentRoute === 'Stockyard Management' || currentRoute === 'Operations Corridors' || currentRoute === 'Dispatch Waybills') ? '#10B981' : '#64748B'} 
+                style={styles.drawerIcon} 
+              />
+              <Text style={[styles.drawerLabel, (currentRoute === 'Stockyard Management' || currentRoute === 'Operations Corridors' || currentRoute === 'Dispatch Waybills') && styles.activeDrawerLabel, { flex: 1 }]}>
+                Operations & Stockyard
+              </Text>
+              <Feather 
+                name={isOperationsOpen ? 'chevron-down' : 'chevron-right'} 
+                size={16} 
+                color="#64748B" 
+              />
             </TouchableOpacity>
 
-            <TouchableOpacity 
-              style={styles.subDrawerItem} 
-              onPress={() => props.navigation.navigate('Operations Corridors')}
-            >
-              <Feather name="git-merge" size={16} color={currentRoute === 'Operations Corridors' ? '#10B981' : '#64748B'} style={{ marginRight: 12 }} />
-              <Text style={[styles.subDrawerLabel, currentRoute === 'Operations Corridors' && styles.activeDrawerLabel]}>Operations Corridors</Text>
-            </TouchableOpacity>
+            {isOperationsOpen && (
+              <View style={{ paddingLeft: 32, backgroundColor: '#F8FAFC', borderBottomWidth: 1, borderBottomColor: '#E2E8F0', paddingVertical: 4 }}>
+                <TouchableOpacity 
+                  style={styles.subDrawerItem} 
+                  onPress={() => props.navigation.navigate('Stockyard Management')}
+                >
+                  <Feather name="layers" size={16} color={currentRoute === 'Stockyard Management' ? '#10B981' : '#64748B'} style={{ marginRight: 12 }} />
+                  <Text style={[styles.subDrawerLabel, currentRoute === 'Stockyard Management' && styles.activeDrawerLabel]}>Stockyard Hubs</Text>
+                </TouchableOpacity>
 
-            <TouchableOpacity 
-              style={styles.subDrawerItem} 
-              onPress={() => props.navigation.navigate('Dispatch Waybills')}
-            >
-              <Feather name="file-text" size={16} color={currentRoute === 'Dispatch Waybills' ? '#10B981' : '#64748B'} style={{ marginRight: 12 }} />
-              <Text style={[styles.subDrawerLabel, currentRoute === 'Dispatch Waybills' && styles.activeDrawerLabel]}>Dispatch Waybills</Text>
-            </TouchableOpacity>
-          </View>
+                <TouchableOpacity 
+                  style={styles.subDrawerItem} 
+                  onPress={() => props.navigation.navigate('Operations Corridors')}
+                >
+                  <Feather name="git-merge" size={16} color={currentRoute === 'Operations Corridors' ? '#10B981' : '#64748B'} style={{ marginRight: 12 }} />
+                  <Text style={[styles.subDrawerLabel, currentRoute === 'Operations Corridors' && styles.activeDrawerLabel]}>Operations Corridors</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={styles.subDrawerItem} 
+                  onPress={() => props.navigation.navigate('Dispatch Waybills')}
+                >
+                  <Feather name="file-text" size={16} color={currentRoute === 'Dispatch Waybills' ? '#10B981' : '#64748B'} style={{ marginRight: 12 }} />
+                  <Text style={[styles.subDrawerLabel, currentRoute === 'Dispatch Waybills' && styles.activeDrawerLabel]}>Dispatch Waybills</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </>
         )}
 
-        {/* FLEET & LOGISTICS */}
-        <TouchableOpacity 
-          style={[styles.drawerItem, currentRoute === 'Fleet Hub' && styles.activeDrawerItem]}
-          onPress={() => setIsFleetOpen(!isFleetOpen)}
-        >
-          <Feather 
-            name="truck" 
-            size={20} 
-            color={currentRoute === 'Fleet Hub' ? '#10B981' : '#64748B'} 
-            style={styles.drawerIcon} 
-          />
-          <Text style={[styles.drawerLabel, currentRoute === 'Fleet Hub' && styles.activeDrawerLabel, { flex: 1 }]}>
-            Fleet & Machinery
-          </Text>
-          <Feather 
-            name={isFleetOpen ? 'chevron-down' : 'chevron-right'} 
-            size={16} 
-            color="#64748B" 
-          />
-        </TouchableOpacity>
-
-        {isFleetOpen && (
-          <View style={{ paddingLeft: 32, backgroundColor: '#F8FAFC', borderBottomWidth: 1, borderBottomColor: '#E2E8F0', paddingVertical: 4 }}>
+        {/* FLEET & LOGISTICS (Restricted: Not visible to HR) */}
+        {canAccessFleet && (
+          <>
             <TouchableOpacity 
-              style={styles.subDrawerItem} 
-              onPress={() => props.navigation.navigate('Fleet Hub')}
+              style={[styles.drawerItem, currentRoute === 'Fleet Hub' && styles.activeDrawerItem]}
+              onPress={() => setIsFleetOpen(!isFleetOpen)}
             >
-              <Feather name="truck" size={16} color={currentRoute === 'Fleet Hub' ? '#10B981' : '#64748B'} style={{ marginRight: 12 }} />
-              <Text style={[styles.subDrawerLabel, currentRoute === 'Fleet Hub' && styles.activeDrawerLabel]}>Fleet & Equipment Hub</Text>
+              <Feather 
+                name="truck" 
+                size={20} 
+                color={currentRoute === 'Fleet Hub' ? '#10B981' : '#64748B'} 
+                style={styles.drawerIcon} 
+              />
+              <Text style={[styles.drawerLabel, currentRoute === 'Fleet Hub' && styles.activeDrawerLabel, { flex: 1 }]}>
+                Fleet & Machinery
+              </Text>
+              <Feather 
+                name={isFleetOpen ? 'chevron-down' : 'chevron-right'} 
+                size={16} 
+                color="#64748B" 
+              />
             </TouchableOpacity>
 
-            <TouchableOpacity 
-              style={styles.subDrawerItem} 
-              onPress={() => props.navigation.navigate('Fleet Operations')}
-            >
-              <Feather name="activity" size={16} color={currentRoute === 'Fleet Operations' ? '#10B981' : '#64748B'} style={{ marginRight: 12 }} />
-              <Text style={[styles.subDrawerLabel, currentRoute === 'Fleet Operations' && styles.activeDrawerLabel]}>Fuel & Running Logs</Text>
-            </TouchableOpacity>
+            {isFleetOpen && (
+              <View style={{ paddingLeft: 32, backgroundColor: '#F8FAFC', borderBottomWidth: 1, borderBottomColor: '#E2E8F0', paddingVertical: 4 }}>
+                <TouchableOpacity 
+                  style={styles.subDrawerItem} 
+                  onPress={() => props.navigation.navigate('Fleet Hub')}
+                >
+                  <Feather name="truck" size={16} color={currentRoute === 'Fleet Hub' ? '#10B981' : '#64748B'} style={{ marginRight: 12 }} />
+                  <Text style={[styles.subDrawerLabel, currentRoute === 'Fleet Hub' && styles.activeDrawerLabel]}>Fleet & Equipment Hub</Text>
+                </TouchableOpacity>
 
-            <TouchableOpacity 
-              style={styles.subDrawerItem} 
-              onPress={() => props.navigation.navigate('Temporary Vehicles')}
-            >
-              <Feather name="clock" size={16} color={currentRoute === 'Temporary Vehicles' ? '#10B981' : '#64748B'} style={{ marginRight: 12 }} />
-              <Text style={[styles.subDrawerLabel, currentRoute === 'Temporary Vehicles' && styles.activeDrawerLabel]}>Temporary Hired Fleet</Text>
-            </TouchableOpacity>
+                <TouchableOpacity 
+                  style={styles.subDrawerItem} 
+                  onPress={() => props.navigation.navigate('Fleet Operations')}
+                >
+                  <Feather name="activity" size={16} color={currentRoute === 'Fleet Operations' ? '#10B981' : '#64748B'} style={{ marginRight: 12 }} />
+                  <Text style={[styles.subDrawerLabel, currentRoute === 'Fleet Operations' && styles.activeDrawerLabel]}>Fuel & Running Logs</Text>
+                </TouchableOpacity>
 
-            <TouchableOpacity 
-              style={styles.subDrawerItem} 
-              onPress={() => props.navigation.navigate('Vehicle Assignments')}
-            >
-              <Feather name="link" size={16} color={currentRoute === 'Vehicle Assignments' ? '#10B981' : '#64748B'} style={{ marginRight: 12 }} />
-              <Text style={[styles.subDrawerLabel, currentRoute === 'Vehicle Assignments' && styles.activeDrawerLabel]}>Vehicle Assignments</Text>
-            </TouchableOpacity>
+                <TouchableOpacity 
+                  style={styles.subDrawerItem} 
+                  onPress={() => props.navigation.navigate('Temporary Vehicles')}
+                >
+                  <Feather name="clock" size={16} color={currentRoute === 'Temporary Vehicles' ? '#10B981' : '#64748B'} style={{ marginRight: 12 }} />
+                  <Text style={[styles.subDrawerLabel, currentRoute === 'Temporary Vehicles' && styles.activeDrawerLabel]}>Temporary Hired Fleet</Text>
+                </TouchableOpacity>
 
-            <TouchableOpacity 
-              style={styles.subDrawerItem} 
-              onPress={() => props.navigation.navigate('My Vehicle & Shifts')}
-            >
-              <Feather name="user-check" size={16} color={currentRoute === 'My Vehicle & Shifts' ? '#10B981' : '#64748B'} style={{ marginRight: 12 }} />
-              <Text style={[styles.subDrawerLabel, currentRoute === 'My Vehicle & Shifts' && styles.activeDrawerLabel]}>My Vehicle & Shifts (Driver)</Text>
-            </TouchableOpacity>
-          </View>
+                <TouchableOpacity 
+                  style={styles.subDrawerItem} 
+                  onPress={() => props.navigation.navigate('Vehicle Assignments')}
+                >
+                  <Feather name="link" size={16} color={currentRoute === 'Vehicle Assignments' ? '#10B981' : '#64748B'} style={{ marginRight: 12 }} />
+                  <Text style={[styles.subDrawerLabel, currentRoute === 'Vehicle Assignments' && styles.activeDrawerLabel]}>Vehicle Assignments</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={styles.subDrawerItem} 
+                  onPress={() => props.navigation.navigate('My Vehicle & Shifts')}
+                >
+                  <Feather name="user-check" size={16} color={currentRoute === 'My Vehicle & Shifts' ? '#10B981' : '#64748B'} style={{ marginRight: 12 }} />
+                  <Text style={[styles.subDrawerLabel, currentRoute === 'My Vehicle & Shifts' && styles.activeDrawerLabel]}>My Vehicle & Shifts (Driver)</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </>
         )}
 
         {/* ADMIN ONLY RESTRICTED MENU */}

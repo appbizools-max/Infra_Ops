@@ -29,6 +29,9 @@ import FmsEmployeePortalPage from './pages/tenant/fms-employee/FmsEmployeePortal
 import StockyardPage from './pages/tenant/stockyard/StockyardPage';
 import OperationsCorridorsPage from './pages/tenant/operations-corridors/OperationsCorridorsPage';
 import DispatchWaybillsPage from './pages/tenant/dispatch-waybills/DispatchWaybillsPage';
+import OperationsHubPage from './pages/tenant/operations/OperationsHubPage';
+import NewOperationPage from './pages/tenant/operations/NewOperationPage';
+import OperationApprovalsPage from './pages/tenant/operations/OperationApprovalsPage';
 import HRPage from './pages/tenant/hr/HRPage';
 import DivisionsPage from './pages/tenant/divisions/DivisionsPage';
 import DepartmentsPage from './pages/tenant/departments/DepartmentsPage';
@@ -189,16 +192,55 @@ function App() {
               </RoleGuard>
             } />
             <Route path="work-orders" element={<WorkOrdersPage />} />
-            <Route path="stockyard" element={<StockyardPage />} />
+            <Route path="operations" element={
+              <RoleGuard allowedRoles={['admin', 'operations', 'logistics', 'project', 'site', 'pm']}>
+                <OperationsHubPage />
+              </RoleGuard>
+            } />
+            <Route path="operations/new" element={
+              <RoleGuard allowedRoles={['admin', 'operations', 'logistics', 'project', 'site', 'pm']}>
+                <NewOperationPage />
+              </RoleGuard>
+            } />
+            <Route path="operations/approvals" element={
+              <RoleGuard allowedRoles={['admin', 'operations', 'logistics', 'project', 'site', 'pm']}>
+                <OperationApprovalsPage />
+              </RoleGuard>
+            } />
+            <Route path="stockyard" element={
+              <RoleGuard allowedRoles={['admin', 'operations', 'logistics', 'project', 'site', 'pm']}>
+                <StockyardPage />
+              </RoleGuard>
+            } />
             <Route path="stockyards" element={<Navigate to="/tenant/stockyard" replace />} />
-            <Route path="operations-corridors" element={<OperationsCorridorsPage />} />
+            <Route path="operations-corridors" element={
+              <RoleGuard allowedRoles={['admin', 'operations', 'logistics', 'project', 'site', 'pm']}>
+                <OperationsCorridorsPage />
+              </RoleGuard>
+            } />
             <Route path="corridors" element={<Navigate to="/tenant/operations-corridors" replace />} />
-            <Route path="dispatch-waybills" element={<DispatchWaybillsPage />} />
+            <Route path="dispatch-waybills" element={
+              <RoleGuard allowedRoles={['admin', 'operations', 'logistics', 'project', 'site', 'pm']}>
+                <DispatchWaybillsPage />
+              </RoleGuard>
+            } />
             <Route path="waybills" element={<Navigate to="/tenant/dispatch-waybills" replace />} />
-            <Route path="vehicle-master" element={<VehicleMasterPage />} />
+            <Route path="vehicle-master" element={
+              <RoleGuard allowedRoles={['admin', 'fleet', 'logistics', 'operations', 'transport', 'fms', 'driver', 'operator', 'pilot', 'project', 'pm']}>
+                <VehicleMasterPage />
+              </RoleGuard>
+            } />
             <Route path="vehicle-assignment" element={<Navigate to="/tenant/vehicle-master" replace />} />
-            <Route path="fleet-operations" element={<FleetOperationsPage />} />
-            <Route path="temporary-vehicles" element={<TemporaryVehiclesPage />} />
+            <Route path="fleet-operations" element={
+              <RoleGuard allowedRoles={['admin', 'fleet', 'logistics', 'operations', 'transport', 'fms', 'driver', 'operator', 'pilot', 'project', 'pm']}>
+                <FleetOperationsPage />
+              </RoleGuard>
+            } />
+            <Route path="temporary-vehicles" element={
+              <RoleGuard allowedRoles={['admin', 'fleet', 'logistics', 'operations', 'transport', 'fms', 'driver', 'operator', 'pilot', 'project', 'pm']}>
+                <TemporaryVehiclesPage />
+              </RoleGuard>
+            } />
             <Route path="fms-employee" element={<FmsEmployeePortalPage />} />
             <Route path="my-vehicle-assignment" element={<Navigate to="/tenant/fms-employee" replace />} />
             <Route path="fuel-running-logs" element={<Navigate to="/tenant/fleet-operations" replace />} />

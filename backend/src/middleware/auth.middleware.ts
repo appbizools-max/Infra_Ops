@@ -5,8 +5,16 @@ import { pool } from '../config/db';
 export const authenticateToken = async (req: express.Request & { user?: any }, res: express.Response, next: express.NextFunction) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    if (process.env.NODE_ENV === 'development' || !process.env.NODE_ENV) {
-      req.user = { tenantId: 1, firebaseUid: 'dev-fallback', email: 'admin@infraops360.local', userType: 'admin' };
+    if (process.env.NODE_ENV === 'development' && req.headers['x-dev-fallback'] === 'true') {
+      req.user = { 
+        tenantId: 1, 
+        firebaseUid: 'dev-fallback', 
+        email: 'admin@infraops360.local', 
+        userType: 'admin',
+        role: 'admin',
+        allowedModules: ['*'],
+        permissions: { '*': { '*': true } }
+      };
       return next();
     }
     return res.status(401).json({ error: 'Unauthorized: Missing or invalid authorization header' });
@@ -21,10 +29,26 @@ export const authenticateToken = async (req: express.Request & { user?: any }, r
     try {
       const adminCheck = await pool.query('SELECT tenant_id FROM tenant_admins LIMIT 1');
       const tenantId = adminCheck.rows.length > 0 ? adminCheck.rows[0].tenant_id : 1;
-      req.user = { tenantId, firebaseUid: 'MOCK_DEV_UID', email: 'admin@infraops360.local', userType: 'admin' };
+      req.user = { 
+        tenantId, 
+        firebaseUid: 'MOCK_DEV_UID', 
+        email: 'admin@infraops360.local', 
+        userType: 'admin',
+        role: 'admin',
+        allowedModules: ['*'],
+        permissions: { '*': { '*': true } }
+      };
       return next();
     } catch (e) {
-      req.user = { tenantId: 1, firebaseUid: 'MOCK_DEV_UID', email: 'admin@infraops360.local', userType: 'admin' };
+      req.user = { 
+        tenantId: 1, 
+        firebaseUid: 'MOCK_DEV_UID', 
+        email: 'admin@infraops360.local', 
+        userType: 'admin',
+        role: 'admin',
+        allowedModules: ['*'],
+        permissions: { '*': { '*': true } }
+      };
       return next();
     }
   }
@@ -64,9 +88,13 @@ export const authenticateToken = async (req: express.Request & { user?: any }, r
   }
 
   try {
-    // 3. Resolve user in tenant_admins or tenant_users
+    // 3. Resolve user in tenant_admins or tenant_users with exact role and module permissions
     let tenantId: any = null;
     let role: string = 'user';
+    let department: string | null = null;
+    let allowedModules: string[] = [];
+    let permissions: any = {};
+    let userType: string = 'team_member';
 
     const adminRes = await pool.query(
       'SELECT tenant_id, designation, email FROM tenant_admins WHERE firebase_uid = $1 OR (LOWER(email) = $2 AND $2 IS NOT NULL)',
@@ -76,21 +104,82 @@ export const authenticateToken = async (req: express.Request & { user?: any }, r
     if (adminRes.rows.length > 0) {
       tenantId = adminRes.rows[0].tenant_id;
       role = adminRes.rows[0].designation || 'admin';
+      userType = 'admin';
+      allowedModules = ['*'];
+      permissions = { '*': { '*': true } };
     } else {
       const userRes = await pool.query(
-        'SELECT tenant_id, role, email FROM tenant_users WHERE firebase_uid = $1 OR (LOWER(email) = $2 AND $2 IS NOT NULL)',
+        `SELECT u.tenant_id, u.role, u.department, u.email,
+                COALESCE(u.allowed_modules, r.allowed_modules, ARRAY['dashboard']::text[]) AS allowed_modules,
+                COALESCE(u.permissions, r.permissions, '{}'::jsonb) AS permissions
+         FROM tenant_users u
+         LEFT JOIN tenant_roles r ON LOWER(TRIM(u.role)) = LOWER(TRIM(r.name)) AND u.tenant_id = r.tenant_id
+         WHERE u.firebase_uid = $1 OR (LOWER(u.email) = $2 AND $2 IS NOT NULL)`,
         [uid, email ? email.toLowerCase() : null]
       );
       if (userRes.rows.length > 0) {
         tenantId = userRes.rows[0].tenant_id;
         role = userRes.rows[0].role || 'staff';
+        department = userRes.rows[0].department || null;
+        allowedModules = userRes.rows[0].allowed_modules || [];
+        permissions = userRes.rows[0].permissions || {};
       }
     }
 
-    req.user = { tenantId: tenantId || 1, firebaseUid: uid, email, role };
+    req.user = { 
+      tenantId: tenantId || 1, 
+      firebaseUid: uid, 
+      email, 
+      role, 
+      department, 
+      userType, 
+      allowedModules, 
+      permissions 
+    };
     return next();
   } catch (err: any) {
     console.error('[authMiddleware] Database lookup error:', err);
     return res.status(500).json({ error: 'Internal auth database error' });
   }
+};
+
+// Role authorization guard middleware
+export const requireRoles = (...roles: string[]) => {
+  return (req: express.Request & { user?: any }, res: express.Response, next: express.NextFunction) => {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Unauthorized: User authentication required' });
+    }
+    // Tenant Admin always has full access
+    if (req.user.userType === 'admin') {
+      return next();
+    }
+    const userRole = (req.user.role || '').toUpperCase();
+    const userDept = (req.user.department || '').toUpperCase();
+    const isAllowed = roles.some(r => {
+      const target = r.toUpperCase();
+      return userRole.includes(target) || userDept.includes(target);
+    });
+
+    if (!isAllowed) {
+      return res.status(403).json({ error: `Forbidden: Access requires one of the following roles: ${roles.join(', ')}` });
+    }
+    return next();
+  };
+};
+
+// Module access guard middleware
+export const requireModule = (moduleName: string) => {
+  return (req: express.Request & { user?: any }, res: express.Response, next: express.NextFunction) => {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Unauthorized: User authentication required' });
+    }
+    if (req.user.userType === 'admin' || (req.user.allowedModules && req.user.allowedModules.includes('*'))) {
+      return next();
+    }
+    const allowed = req.user.allowedModules || [];
+    if (!allowed.includes(moduleName)) {
+      return res.status(403).json({ error: `Forbidden: You do not have access to the "${moduleName}" module` });
+    }
+    return next();
+  };
 };
